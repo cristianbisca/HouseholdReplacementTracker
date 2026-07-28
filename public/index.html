@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Household Replacement Tracker</title>
+  <link rel="stylesheet" href="/css/styles.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏠</text></svg>">
+</head>
+<body>
+  <!-- Header -->
+  <header class="app-header" id="appHeader">
+    <div class="header-content">
+      <div class="header-left">
+        <h1 class="app-title">🏠 HRT</h1>
+        <span class="app-subtitle" id="appSubtitle">Household Replacement Tracker</span>
+      </div>
+      <div class="header-right">
+        <div class="connection-status" id="connectionStatus">
+          <span class="status-dot disconnected"></span>
+          <span class="status-text">Connecting...</span>
+        </div>
+        <button class="icon-btn" id="addNewItemBtn" title="Add New Item">+</button>
+      </div>
+    </div>
+  </header>
+
+  <!-- User Selection Bar -->
+  <div class="user-bar" id="userBar">
+    <span class="user-label">Tracking as:</span>
+    <select class="user-select" id="currentUserSelect">
+      <option value="">Select yourself...</option>
+    </select>
+    <button class="text-btn" id="addUserBtn">+ Add</button>
+  </div>
+
+  <!-- Filter/View Tabs -->
+  <nav class="filter-nav" id="filterNav">
+    <button class="filter-tab active" data-filter="all">All Items</button>
+    <button class="filter-tab" data-filter="overdue">Overdue</button>
+    <button class="filter-tab" data-filter="due-soon">Due Soon</button>
+    <button class="filter-tab" data-filter="usage">Usage-Based</button>
+  </nav>
+
+  <!-- Main Content -->
+  <main class="main-content" id="mainContent">
+    <!-- Items List View -->
+    <div class="view items-view active" id="itemsView">
+      <div class="items-grid" id="itemsGrid">
+        <!-- Item cards will be rendered here -->
+      </div>
+      <div class="empty-state" id="emptyState" style="display: none;">
+        <div class="empty-icon">📋</div>
+        <h2>No items tracked yet</h2>
+        <p>Add your first item to start tracking replacements</p>
+        <button class="btn btn-primary" onclick="openModal('itemModal')">Add First Item</button>
+      </div>
+    </div>
+
+    <!-- Item Detail View -->
+    <div class="view detail-view" id="detailView">
+      <div class="detail-container">
+        <button class="back-btn" id="backBtn">← Back</button>
+        
+        <div class="detail-header" id="detailHeader">
+          <!-- Populated dynamically -->
+        </div>
+
+        <div class="detail-status-card" id="detailStatusCard">
+          <!-- Status info populated dynamically -->
+        </div>
+
+        <div class="detail-actions" id="detailActions">
+          <!-- Action buttons populated dynamically -->
+        </div>
+
+        <div class="detail-sections">
+          <section class="detail-section">
+            <h3>📋 Details</h3>
+            <div class="detail-info-grid" id="detailInfoGrid">
+              <!-- Info populated dynamically -->
+            </div>
+          </section>
+
+          <section class="detail-section" id="partSection" style="display: none;">
+            <h3>🔧 Part Information</h3>
+            <div class="part-info-grid" id="partInfoGrid">
+              <!-- Part info populated dynamically -->
+            </div>
+          </section>
+
+          <section class="detail-section" id="historySection">
+            <h3>📜 Replacement History</h3>
+            <div class="history-list" id="historyList">
+              <!-- History items populated dynamically -->
+            </div>
+          </section>
+        </div>
+
+        <div class="detail-footer-actions">
+          <button class="btn btn-secondary" id="editItemBtn">Edit Item</button>
+          <button class="btn btn-danger" id="deleteItemBtn">Delete</button>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- Add/Edit Item Modal -->
+  <div class="modal-overlay" id="itemModal">
+    <div class="modal" role="dialog" aria-labelledby="itemModalTitle">
+      <div class="modal-header">
+        <h2 id="itemModalTitle">Add New Item</h2>
+        <button class="modal-close" data-modal="itemModal">&times;</button>
+      </div>
+      
+      <form id="itemForm" class="modal-body">
+        <input type="hidden" id="editItemId">
+        
+        <!-- Basic Info Section -->
+        <fieldset class="form-section">
+          <legend>Basic Information</legend>
+          
+          <div class="form-group">
+            <label for="itemName">Item Name *</label>
+            <input type="text" id="itemName" name="name" required placeholder="e.g., Fridge Water Filter">
+          </div>
+
+          <div class="form-group">
+            <label for="itemCategory">Category</label>
+            <select id="itemCategory" name="category">
+              <option value="">Select category...</option>
+              <option value="appliance">Appliance</option>
+              <option value="hvac">HVAC</option>
+              <option value="kitchen">Kitchen</option>
+              <option value="plumbing">Plumbing</option>
+              <option value="automotive">Automotive</option>
+              <option value="electronics">Electronics</option>
+              <option value="general">General</option>
+              <option value="other">Other</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label for="itemDescription">Description</label>
+            <textarea id="itemDescription" name="description" rows="2" placeholder="Additional details about this item..."></textarea>
+          </div>
+        </fieldset>
+
+        <!-- Time-Based Tracking Section -->
+        <fieldset class="form-section">
+          <legend>⏱️ Time-Based Tracking</legend>
+          
+          <div class="form-row">
+            <div class="form-group">
+              <label for="itemIntervalValue">Replace Every</label>
+              <input type="number" id="itemIntervalValue" name="time_interval_value" min="1" value="6">
+            </div>
+            
+            <div class="form-group">
+              <label for="itemIntervalType">Interval Type</label>
+              <select id="itemIntervalType" name="time_interval_type">
+                <option value="days">Days</option>
+                <option value="weeks">Weeks</option>
+                <option value="months" selected>Months</option>
+                <option value="years">Years</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="form-group">
+            <label for="itemLastReplaced">Last Replaced (optional)</label>
+            <input type="date" id="itemLastReplaced" name="last_replaced_date">
+          </div>
+
+          <div class="form-group">
+            <label for="itemNextDue">Next Due Date (auto-calculated or manual)</label>
+            <input type="date" id="itemNextDue" name="next_due_date">
+          </div>
+        </fieldset>
+
+        <!-- Usage-Based Tracking Section -->
+        <fieldset class="form-section">
+          <legend>🔢 Usage/Counter-Based Tracking</legend>
+          
+          <div class="form-group checkbox-group">
+            <label class="checkbox-label">
+              <input type="checkbox" id="itemUsageEnabled" name="usage_enabled">
+              <span>Enable usage-based tracking</span>
+            </label>
+          </div>
+
+          <div class="usage-fields" id="usageFields" style="display: none;">
+            <div class="form-row">
+              <div class="form-group">
+                <label for="itemUsageInterval">Reset After</label>
+                <input type="number" id="itemUsageInterval" name="usage_interval_value" min="1" value="100">
+              </div>
+              
+              <div class="form-group">
+                <label for="itemUsageUnit">Unit</label>
+                <input type="text" id="itemUsageUnit" name="usage_unit" placeholder="e.g., shots, cycles, pages">
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label for="itemCurrentUsage">Current Count</label>
+              <input type="number" id="itemCurrentUsage" name="current_usage_count" min="0" step="1" value="0">
+            </div>
+          </div>
+        </fieldset>
+
+        <!-- Part Information Section -->
+        <fieldset class="form-section">
+          <legend>🔧 Part & Order Info</legend>
+          
+          <div class="form-group">
+            <label for="itemPartNumber">Part Number / SKU</label>
+            <input type="text" id="itemPartNumber" name="part_number" placeholder="e.g., LF3000, MERV-11-16x25x1">
+          </div>
+
+          <div class="form-group">
+            <label for="itemManufacturer">Manufacturer / Brand</label>
+            <input type="text" id="itemManufacturer" name="manufacturer" placeholder="e.g., Samsung, Honeywell">
+          </div>
+
+          <div class="form-group">
+            <label for="itemSpecifications">Specifications</label>
+            <textarea id="itemSpecifications" name="specifications" rows="2" placeholder="Size, dimensions, specs... e.g., 16x25x1 MERV 11"></textarea>
+          </div>
+
+          <div class="form-group">
+            <label for="itemReorderUrl">Reorder Link</label>
+            <input type="url" id="itemReorderUrl" name="reorder_url" placeholder="https://www.amazon.com/dp/...">
+          </div>
+        </fieldset>
+
+        <!-- Notes Section -->
+        <fieldset class="form-section">
+          <legend>📝 Notes</legend>
+          
+          <div class="form-group">
+            <textarea id="itemNotes" name="notes" rows="3" placeholder="Installation tips, warnings, special instructions..."></textarea>
+          </div>
+        </fieldset>
+
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-modal-close="itemModal">Cancel</button>
+          <button type="submit" class="btn btn-primary" id="saveItemBtn">Save Item</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Replacement Confirmation Modal -->
+  <div class="modal-overlay" id="replacementModal">
+    <div class="modal modal-small" role="dialog" aria-labelledby="replacementModalTitle">
+      <div class="modal-header">
+        <h2 id="replacementModalTitle">✅ Record Replacement</h2>
+        <button class="modal-close" data-modal="replacementModal">&times;</button>
+      </div>
+      
+      <form id="replacementForm" class="modal-body">
+        <input type="hidden" id="replacementItemId">
+        
+        <p class="confirmation-text" id="confirmationText">
+          Confirm that you replaced this item today?
+        </p>
+
+        <div class="form-group">
+          <label for="replacementNotes">Notes (optional)</label>
+          <textarea id="replacementNotes" rows="2" placeholder="Any notes about this replacement..."></textarea>
+        </div>
+
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-modal-close="replacementModal">Cancel</button>
+          <button type="submit" class="btn btn-success" id="confirmReplacementBtn">✓ Replaced Today</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Usage Increment Modal -->
+  <div class="modal-overlay" id="usageModal">
+    <div class="modal modal-small" role="dialog" aria-labelledby="usageModalTitle">
+      <div class="modal-header">
+        <h2 id="usageModalTitle">🔢 Add Usage</h2>
+        <button class="modal-close" data-modal="usageModal">&times;</button>
+      </div>
+      
+      <form id="usageForm" class="modal-body">
+        <input type="hidden" id="usageItemId">
+        
+        <p class="confirmation-text" id="usageConfirmationText"></p>
+
+        <div class="form-group">
+          <label for="usageAmount">Amount to Add</label>
+          <input type="number" id="usageAmount" name="amount" min="1" value="1" step="1">
+        </div>
+
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-modal-close="usageModal">Cancel</button>
+          <button type="submit" class="btn btn-primary" id="confirmUsageBtn">Add Usage</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Add User Modal -->
+  <div class="modal-overlay" id="userModal">
+    <div class="modal modal-small" role="dialog" aria-labelledby="userModalTitle">
+      <div class="modal-header">
+        <h2 id="userModalTitle">Add Household Member</h2>
+        <button class="modal-close" data-modal="userModal">&times;</button>
+      </div>
+      
+      <form id="userForm" class="modal-body">
+        <div class="form-group">
+          <label for="userName">Name</label>
+          <input type="text" id="userName" name="name" required placeholder="e.g., John, Maria">
+        </div>
+
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-modal-close="userModal">Cancel</button>
+          <button type="submit" class="btn btn-primary">Add User</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Toast Notification Container -->
+  <div class="toast-container" id="toastContainer"></div>
+
+  <script src="/js/app.js"></script>
+</body>
+</html>

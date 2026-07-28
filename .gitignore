@@ -1,0 +1,4 @@
+node_modules/
+data/hrt.db
+data/*.db-wal
+data/*.db-shm
