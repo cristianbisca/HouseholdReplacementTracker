@@ -453,22 +453,124 @@ sudo systemctl start hrt
 
 ### Docker Deployment
 
-Create a `Dockerfile`:
+A production-ready `Dockerfile` is included in the repository. It uses a **multi-stage build** with Node.js 18 Alpine, runs as a **non-root user**, and includes a **health check**.
 
-```dockerfile
-FROM node:20-alpine
-WORKDIR /app
-COPY package*.json ./
-RUN npm ci --only=production
-COPY . .
-EXPOSE 3000
-CMD ["node", "server/index.js"]
+#### Build the Image
+
+```bash
+docker build -t household-replacement-tracker:latest .
 ```
 
-Build and run:
+#### Run the Container
+
 ```bash
-docker build -t hrt .
-docker run -d -p 3000:3000 -v ./data:/app/data --name hrt hrt
+docker run -d \
+  --name hrt \
+  -p 3000:3000 \
+  -v ./data:/app/data \
+  -e PORT=3000 \
+  --restart unless-stopped \
+  household-replacement-tracker:latest
+```
+
+| Flag | Description |
+|------|-------------|
+| `-d` | Run in detached (background) mode |
+| `--name hrt` | Assign a name to the container |
+| `-p 3000:3000` | Map host port 3000 to container port 3000 |
+| `-v ./data:/app/data` | Persist SQLite database on the host |
+| `--restart unless-stopped` | Auto-restart on crash or docker daemon restart |
+
+#### Docker Compose
+
+Create a `docker-compose.yml`:
+
+```yaml
+version: '3.8'
+
+services:
+  hrt:
+    build: .
+    container_name: household-replacement-tracker
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./data:/app/data
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/api/health', (r) => { process.exit(r.statusCode === 200 ? 0 : 1) })"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+```
+
+Then run:
+
+```bash
+docker compose up -d
+```
+
+#### Push to a Registry
+
+To push the image to a container registry (e.g., GitHub Container Registry, Docker Hub):
+
+```bash
+# Tag the image for your registry
+docker tag household-replacement-tracker:latest <registry>/<username>/household-replacement-tracker:latest
+
+# Login to the registry
+docker login <registry>
+
+# Push the image
+docker push <registry>/<username>/household-replacement-tracker:latest
+```
+
+**Example — GitHub Container Registry (ghcr.io):**
+
+```bash
+docker tag household-replacement-tracker:latest ghcr.io/cristianbisca/household-replacement-tracker:latest
+docker login ghcr.io
+docker push ghcr.io/cristianbisca/household-replacement-tracker:latest
+```
+
+**Example — Docker Hub:**
+
+```bash
+docker tag household-replacement-tracker:latest dockerhub-username/household-replacement-tracker:latest
+docker login
+docker push dockerhub-username/household-replacement-tracker:latest
+```
+
+#### Docker Image Details
+
+| Property | Value |
+|----------|-------|
+| Base image | `node:18-alpine` |
+| Multi-stage build | Yes (builder + runtime stages) |
+| Non-root user | `appuser` in `appgroup` |
+| Health check | `/api/health` endpoint every 30s |
+| Exposed port | `3000` |
+| Data volume | `/app/data` (SQLite database) |
+
+#### `.dockerignore`
+
+The repository includes a `.dockerignore` file that excludes unnecessary files from the build context:
+
+```
+.git
+.gitignore
+node_modules
+npm-debug.log
+data/*.db
+data/*.sqlite
+README.md
+.env
+.DS_Store
+Thumbs.db
 ```
 
 ---
