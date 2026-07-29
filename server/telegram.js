@@ -4,7 +4,9 @@ const db = require('./database');
 let botToken = null;
 let chatId = null;
 let isEnabled = false;
-let notifiedDates = {}; // Track what we've already notified to avoid spam
+// Track per-item, per-reminder-state to avoid duplicates.
+// Key format: reminded_${itemId}_${dueDate}_Tminus${days}  (e.g. reminded_xyz_2026-08-01_Tminus2)
+let notifiedDates = {};
 
 function initTelegram() {
   const settings = db.getSettings();
@@ -104,6 +106,28 @@ function testConnection() {
   return sendMessage('✅ <b>Household Replacement Tracker</b>\n\nTest message successful! Notifications are working.');
 }
 
+function getReminderKey(itemId, dueDate, daysBefore) {
+  return `reminded_${itemId}_${dueDate}_Tminus${daysBefore}`;
+}
+
+function hasSentReminder(itemId, dueDate, daysBefore) {
+  const key = getReminderKey(itemId, dueDate, daysBefore);
+  return !!notifiedDates[key];
+}
+
+function markReminderSent(itemId, dueDate, daysBefore) {
+  const key = getReminderKey(itemId, dueDate, daysBefore);
+  notifiedDates[key] = true;
+  // Clean up old entries periodically (keep only last 30 days worth)
+  const keys = Object.keys(notifiedDates);
+  if (keys.length > 200) {
+    // Keep the most recent 150 entries
+    for (const key of keys.slice(0, keys.length - 150)) {
+      delete notifiedDates[key];
+    }
+  }
+}
+
 function getDueItems() {
   const items = db.getAllItems();
   const warningDays = parseInt(db.getSettings().warning_days_before) || 7;
@@ -132,71 +156,114 @@ function getDueItems() {
   return { dueItems, upcomingItems };
 }
 
+/**
+ * Find items that match a specific reminder offset and haven't been notified yet.
+ * @param {number} daysBefore - The T-minus offset (2, 1, or 0)
+ * @returns {Array} Items matching this reminder window
+ */
+function getItemsForReminder(daysBefore) {
+  const items = db.getAllItems();
+  const matchingItems = [];
+
+  for (const item of items) {
+    if (!item.next_due_date) continue;
+
+    const daysUntil = item.days_until_due;
+    if (daysUntil === null || daysUntil === undefined) continue;
+
+    // Check if this item matches the reminder offset AND we haven't sent it yet
+    if (daysUntil === daysBefore && !hasSentReminder(item.id, item.next_due_date, daysBefore)) {
+      matchingItems.push({ ...item });
+    }
+  }
+
+  return matchingItems;
+}
+
+/**
+ * Build a formatted message for a specific reminder type.
+ */
+function buildReminderMessage(items, daysBefore) {
+  let message = '🏠 <b>Household Replacement Tracker</b>\n\n';
+
+  if (daysBefore === 0) {
+    message += `🔴 <b>DUE TODAY</b> — please replace soon!\n\n`;
+    for (const item of items) {
+      message += `• <b>${item.name}</b>\n`;
+      if (item.category) message += `  Category: ${item.category}\n`;
+      if (item.part_number) message += `  Part #: ${item.part_number}\n`;
+    }
+  } else if (daysBefore === 1) {
+    message += `🟡 <b>TOMORROW</b> is the due date for:\n\n`;
+    for (const item of items) {
+      message += `• <b>${item.name}</b>\n`;
+      if (item.category) message += `  Category: ${item.category}\n`;
+      if (item.part_number) message += `  Part #: ${item.part_number}\n`;
+    }
+  } else if (daysBefore === 2) {
+    message += `🔵 <b>IN 2 DAYS</b> the following will be due:\n\n`;
+    for (const item of items) {
+      message += `• <b>${item.name}</b>\n`;
+      if (item.category) message += `  Category: ${item.category}\n`;
+      if (item.part_number) message += `  Part #: ${item.part_number}\n`;
+    }
+  }
+
+  return message;
+}
+
 function sendDailyNotification() {
   if (!isEnabled || !botToken || !chatId) {
     console.log('[Telegram] Skipping daily notification: not configured');
     return;
   }
 
-  const { dueItems, upcomingItems } = getDueItems();
+  // Send reminders for T-2, T-1, and T (due date)
+  const reminderOffsets = [2, 1, 0];
+  let sentCount = 0;
 
-  // Nothing to report
-  if (dueItems.length === 0 && upcomingItems.length === 0) {
-    return;
-  }
+  const promises = [];
 
-  let message = '🏠 <b>Household Replacement Tracker</b>\n\n';
+  for (const daysBefore of reminderOffsets) {
+    const items = getItemsForReminder(daysBefore);
 
-  const today = new Date().toISOString().split('T')[0];
-
-  // Build a key for today's notifications to avoid duplicate sends
-  const notifiedKey = `last_sent_${today}`;
-  
-  if (notifiedDates[notifiedKey]) {
-    console.log('[Telegram] Already sent notification for today, skipping');
-    return;
-  }
-
-  // Overdue items
-  const overdueItems = dueItems.filter(i => i.status === 'overdue');
-  const dueTodayItems = dueItems.filter(i => i.status === 'due_today');
-
-  if (overdueItems.length > 0) {
-    message += `🔴 <b>OVERDUE</b>\n`;
-    for (const item of overdueItems) {
-      message += `• <b>${item.name}</b> - ${item.daysOverdue} day(s) overdue\n`;
+    if (items.length === 0) {
+      console.log(`[Telegram] No items for T-${daysBefore} reminder`);
+      continue;
     }
-    message += '\n';
-  }
 
-  if (dueTodayItems.length > 0) {
-    message += `🟡 <b>DUE TODAY</b>\n`;
-    for (const item of dueTodayItems) {
-      message += `• <b>${item.name}</b>\n`;
+    const message = buildReminderMessage(items, daysBefore);
+
+    // Mark all these reminders as sent before sending (to avoid race conditions)
+    for (const item of items) {
+      markReminderSent(item.id, item.next_due_date, daysBefore);
     }
-    message += '\n';
-  }
 
-  if (upcomingItems.length > 0) {
-    message += `🔵 <b>COMING UP SOON</b>\n`;
-    for (const item of upcomingItems) {
-      const daysText = item.days_until_due === 1 ? '1 day' : `${item.days_until_due} days`;
-      message += `• <b>${item.name}</b> - in ${daysText}\n`;
-    }
-  }
+    console.log(`[Telegram] Sending T-${daysBefore} reminder for ${items.length} item(s)`);
 
-  // Clear notified state since we're building a new message
-  // Set after successful send
-  return sendMessage(message).then(() => {
-    notifiedDates[notifiedKey] = true;
-    // Clean up old entries (keep only last 7 days)
-    const keys = Object.keys(notifiedDates);
-    if (keys.length > 7) {
-      for (const key of keys.slice(0, -7)) {
+    const promise = sendMessage(message).then(() => {
+      sentCount++;
+      console.log(`[Telegram] T-${daysBefore} reminder sent successfully`);
+    }).catch((error) => {
+      console.error(`[Telegram] Failed to send T-${daysBefore} reminder:`, error.message);
+      // If send fails, unmark so we can retry next time
+      for (const item of items) {
+        const key = getReminderKey(item.id, item.next_due_date, daysBefore);
         delete notifiedDates[key];
       }
-    }
-    console.log('[Telegram] Daily notification sent');
+    });
+
+    promises.push(promise);
+  }
+
+  if (promises.length === 0) {
+    console.log('[Telegram] No reminders to send today');
+    return Promise.resolve();
+  }
+
+  return Promise.allSettled(promises).then((results) => {
+    const succeeded = results.filter(r => r.status === 'fulfilled').length;
+    console.log(`[Telegram] Daily notification cycle complete: ${succeeded}/${promises.length} reminders sent`);
   });
 }
 
