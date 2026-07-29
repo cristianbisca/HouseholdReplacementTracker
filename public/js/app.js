@@ -692,8 +692,9 @@
     // Edit item button
     dom.editItemBtn.addEventListener('click', () => {
       if (state.selectedItem) {
+        const itemId = state.selectedItem.id;
         showListView();
-        setTimeout(() => openItemModal(state.selectedItem.id), 100);
+        setTimeout(() => openItemModal(itemId), 100);
       }
     });
 
