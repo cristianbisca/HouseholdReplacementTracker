@@ -4,8 +4,7 @@ services:
   household-replacement-tracker:
     build: .
     container_name: household-replacement-tracker
-    ports:
-      - "3000:3000"
+    network_mode: host
     volumes:
       - hrt-data:/app/data
     restart: unless-stopped
