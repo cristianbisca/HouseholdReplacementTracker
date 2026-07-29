@@ -1,3 +1,5 @@
+const BUILD_TIMESTAMP = '2026-07-29T18:18:00Z';
+
 const express = require('express');
 const http = require('http');
 const WebSocket = require('ws');
@@ -259,6 +261,10 @@ app.put('/api/settings/:key', (req, res) => {
 });
 
 // Health check
+app.get('/api/version', (req, res) => {
+  res.json({ success: true, buildTimestamp: BUILD_TIMESTAMP });
+});
+
 app.get('/api/health', (req, res) => {
   res.json({ 
     success: true, 
@@ -293,10 +299,13 @@ async function startServer() {
 
     // Start HTTP server
     server.listen(PORT, '0.0.0.0', () => {
-      console.log(`\n🏠 Household Replacement Tracker`);
-      console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
-      console.log(`Server running on port ${PORT}`);
-      console.log(`Local:   http://localhost:${PORT}`);
+      console.log(`\n========================================`);
+      console.log(` Household Replacement Tracker Server`);
+      console.log(`========================================`);
+      console.log(` BUILD TIMESTAMP: ${BUILD_TIMESTAMP}`);
+      console.log(` Server started at: ${new Date().toISOString()}`);
+      console.log(` Listening on port ${PORT}`);
+      console.log(`========================================\n`);
       
       // Get network interfaces for local network access
       const os = require('os');

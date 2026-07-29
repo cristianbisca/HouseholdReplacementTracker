@@ -168,6 +168,12 @@ function createItem(item) {
   const { v1: uuidv4 } = require('uuid');
   const id = uuidv4();
 
+  // Determine next_due_date: use manual input if provided, otherwise calculate from last_replaced_date + interval
+  let nextDueDate = item.next_due_date || null;
+  if (!nextDueDate && item.last_replaced_date && item.time_interval_value) {
+    nextDueDate = calculateNextDueDate(item.last_replaced_date, item.time_interval_value, item.time_interval_type || 'months');
+  }
+
   db.run(`
     INSERT INTO items (
       id, name, category, description,
@@ -186,7 +192,7 @@ function createItem(item) {
     item.time_interval_type || 'months',
     item.time_interval_value || 6,
     item.last_replaced_date || null,
-    item.next_due_date || null,
+    nextDueDate,
     item.usage_enabled ? 1 : 0,
     item.usage_interval_value || 0,
     item.usage_unit || 'units',
