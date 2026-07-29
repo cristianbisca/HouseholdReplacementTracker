@@ -11,10 +11,9 @@
     items: [],
     filteredItems: [],
     currentFilter: 'all',
+    searchQuery: '',
     currentView: 'list',
     selectedItem: null,
-    currentUser: localStorage.getItem('hrt_user') || '',
-    users: JSON.parse(localStorage.getItem('hrt_users') || '[]'),
     ws: null,
     wsConnected: false,
     reconnectAttempts: 0,
@@ -131,32 +130,29 @@
   // --- DOM References ---
   const dom = {};
 
-  function cacheDOMElements() {
+   function cacheDOMElements() {
     dom.itemsGrid = document.getElementById('itemsGrid');
     dom.emptyState = document.getElementById('emptyState');
     dom.itemsView = document.getElementById('itemsView');
     dom.detailView = document.getElementById('detailView');
     dom.filterNav = document.getElementById('filterNav');
+    dom.searchInput = document.getElementById('searchInput');
     dom.connectionStatus = document.getElementById('connectionStatus');
     dom.addNewItemBtn = document.getElementById('addNewItemBtn');
     dom.settingsBtn = document.getElementById('settingsBtn');
     dom.backBtn = document.getElementById('backBtn');
-    dom.currentUserSelect = document.getElementById('currentUserSelect');
-    dom.addUserBtn = document.getElementById('addUserBtn');
     dom.toastContainer = document.getElementById('toastContainer');
 
     // Modals
     dom.itemModal = document.getElementById('itemModal');
     dom.replacementModal = document.getElementById('replacementModal');
     dom.usageModal = document.getElementById('usageModal');
-    dom.userModal = document.getElementById('userModal');
     dom.telegramModal = document.getElementById('telegramModal');
 
     // Forms
     dom.itemForm = document.getElementById('itemForm');
     dom.replacementForm = document.getElementById('replacementForm');
     dom.usageForm = document.getElementById('usageForm');
-    dom.userForm = document.getElementById('userForm');
     dom.telegramForm = document.getElementById('telegramForm');
 
     // Telegram elements
@@ -423,7 +419,7 @@
   // --- WebSocket Connection ---
   function connectWebSocket() {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${protocol}//${window.location.host}?user=${encodeURIComponent(state.currentUser)}`;
+    const wsUrl = `${protocol}//${window.location.host}`;
     
     state.ws = new WebSocket(wsUrl);
 
@@ -546,21 +542,37 @@
 
   // --- Filter Logic ---
   function applyFilter() {
+    let items = [];
+
     switch (state.currentFilter) {
       case 'overdue':
-        state.filteredItems = state.items.filter(i => i.is_overdue);
+        items = state.items.filter(i => i.is_overdue);
         break;
       case 'due-soon':
-        state.filteredItems = state.items.filter(i => 
+        items = state.items.filter(i => 
           !i.is_overdue && i.days_until_due !== null && i.days_until_due <= 7
         );
         break;
       case 'usage':
-        state.filteredItems = state.items.filter(i => i.usage_enabled);
+        items = state.items.filter(i => i.usage_enabled);
         break;
       default:
-        state.filteredItems = [...state.items];
+        items = [...state.items];
     }
+
+    // Apply text search filter
+    if (state.searchQuery) {
+      const query = state.searchQuery.toLowerCase();
+      items = items.filter(item => {
+        return (item.name && item.name.toLowerCase().includes(query)) ||
+               (item.category && item.category.toLowerCase().includes(query)) ||
+               (item.description && item.description.toLowerCase().includes(query)) ||
+               (item.part_number && item.part_number.toLowerCase().includes(query)) ||
+               (item.manufacturer && item.manufacturer.toLowerCase().includes(query));
+      });
+    }
+
+    state.filteredItems = items;
 
     // Sort by due date (most urgent first)
     state.filteredItems.sort((a, b) => {
@@ -998,9 +1010,6 @@
     // Usage form submit
     dom.usageForm.addEventListener('submit', handleUsageSubmit);
 
-    // User form submit
-    dom.userForm.addEventListener('submit', handleUserSubmit);
-
     // Telegram form submit
     dom.telegramForm.addEventListener('submit', handleTelegramSubmit);
 
@@ -1025,21 +1034,11 @@
     // Delete item button
     dom.deleteItemBtn.addEventListener('click', handleDeleteItem);
 
-    // User selection change
-    dom.currentUserSelect.addEventListener('change', (e) => {
-      state.currentUser = e.target.value;
-      localStorage.setItem('hrt_user', state.currentUser);
-      // Reconnect WebSocket with new user
-      if (state.ws) {
-        state.ws.close();
-        connectWebSocket();
-      }
-    });
-
-    // Add user button
-    dom.addUserBtn.addEventListener('click', () => {
-      document.getElementById('userName').value = '';
-      openModal('userModal');
+    // Search input - real-time filtering
+    dom.searchInput.addEventListener('input', (e) => {
+      state.searchQuery = e.target.value.trim();
+      applyFilter();
+      renderItems();
     });
 
     // Keyboard shortcuts
@@ -1107,8 +1106,7 @@
 
     try {
       await apiRequest('POST', `/api/items/${itemId}/replace`, {
-        notes,
-        replaced_by: state.currentUser
+        notes
       });
 
       closeModal('replacementModal');
@@ -1160,55 +1158,6 @@
     } catch (error) {
       console.error('Failed to delete item:', error);
     }
-  }
-
-  function handleUserSubmit(e) {
-    e.preventDefault();
-
-    const name = document.getElementById('userName').value.trim();
-    if (!name) return;
-
-    // Check if user already exists
-    if (state.users.find(u => u.name.toLowerCase() === name.toLowerCase())) {
-      showToast('User already exists', 'warning');
-      return;
-    }
-
-    const colors = ['#2563eb', '#16a34a', '#ea580c', '#dc2626', '#7c3aed', '#0891b2', '#be185d'];
-    const user = {
-      id: Date.now().toString(36),
-      name,
-      color: colors[state.users.length % colors.length]
-    };
-
-    state.users.push(user);
-    localStorage.setItem('hrt_users', JSON.stringify(state.users));
-
-    // Add to select
-    const option = document.createElement('option');
-    option.value = user.name;
-    option.textContent = user.name;
-    dom.currentUserSelect.appendChild(option);
-
-    closeModal('userModal');
-    showToast(`${name} added`, 'success');
-  }
-
-  function renderUserSelect() {
-    // Clear existing options except the first one
-    while (dom.currentUserSelect.options.length > 1) {
-      dom.currentUserSelect.remove(1);
-    }
-
-    state.users.forEach(user => {
-      const option = document.createElement('option');
-      option.value = user.name;
-      option.textContent = user.name;
-      if (user.name === state.currentUser) {
-        option.selected = true;
-      }
-      dom.currentUserSelect.appendChild(option);
-    });
   }
 
   // --- Toast Notifications ---
@@ -1264,7 +1213,6 @@
   function init() {
     cacheDOMElements();
     setupEventListeners();
-    renderUserSelect();
     
     // Setup login form
     const loginForm = document.getElementById('loginForm');

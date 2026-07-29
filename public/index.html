@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Household Replacement Tracker</title>
-  <link rel="stylesheet" href="/css/styles.css?v=20260729-1">
+  <link rel="stylesheet" href="/css/styles.css?v=20260729-2">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏠</text></svg>">
 </head>
 <body>
@@ -52,22 +52,19 @@
     </div>
   </header>
 
-  <!-- User Selection Bar -->
-  <div class="user-bar" id="userBar">
-    <span class="user-label">Tracking as:</span>
-    <select class="user-select" id="currentUserSelect">
-      <option value="">Select yourself...</option>
-    </select>
-    <button class="text-btn" id="addUserBtn">+ Add</button>
+  <!-- Filter Bar -->
+  <div class="filter-bar" id="filterBar">
+    <div class="search-box">
+      <span class="search-icon">🔍</span>
+      <input type="text" class="search-input" id="searchInput" placeholder="Search items...">
+    </div>
+    <nav class="filter-nav" id="filterNav">
+      <button class="filter-tab active" data-filter="all">All Items</button>
+      <button class="filter-tab" data-filter="overdue">Overdue</button>
+      <button class="filter-tab" data-filter="due-soon">Due Soon</button>
+      <button class="filter-tab" data-filter="usage">Usage-Based</button>
+    </nav>
   </div>
-
-  <!-- Filter/View Tabs -->
-  <nav class="filter-nav" id="filterNav">
-    <button class="filter-tab active" data-filter="all">All Items</button>
-    <button class="filter-tab" data-filter="overdue">Overdue</button>
-    <button class="filter-tab" data-filter="due-soon">Due Soon</button>
-    <button class="filter-tab" data-filter="usage">Usage-Based</button>
-  </nav>
 
   <!-- Main Content -->
   <main class="main-content" id="mainContent">
@@ -332,28 +329,6 @@
     </div>
   </div>
 
-  <!-- Add User Modal -->
-  <div class="modal-overlay" id="userModal">
-    <div class="modal modal-small" role="dialog" aria-labelledby="userModalTitle">
-      <div class="modal-header">
-        <h2 id="userModalTitle">Add Household Member</h2>
-        <button class="modal-close" data-modal="userModal">&times;</button>
-      </div>
-      
-      <form id="userForm" class="modal-body">
-        <div class="form-group">
-          <label for="userName">Name</label>
-          <input type="text" id="userName" name="name" required placeholder="e.g., John, Maria">
-        </div>
-
-        <div class="modal-footer">
-          <button type="button" class="btn btn-secondary" data-modal-close="userModal">Cancel</button>
-          <button type="submit" class="btn btn-primary">Add User</button>
-        </div>
-      </form>
-    </div>
-  </div>
-
   <!-- Telegram Settings Modal -->
   <div class="modal-overlay" id="telegramModal">
     <div class="modal" role="dialog" aria-labelledby="telegramModalTitle">
@@ -411,6 +386,6 @@
   <!-- Toast Notification Container -->
   <div class="toast-container" id="toastContainer"></div>
 
-  <script src="/js/app.js?v=20260729-3"></script>
+  <script src="/js/app.js?v=20260729-4"></script>
 </body>
 </html>
