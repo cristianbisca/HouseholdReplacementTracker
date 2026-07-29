@@ -12,8 +12,8 @@ const wss = new WebSocket.Server({ server });
 app.use(express.json());
 app.use(express.static(path.join(__dirname, '..', 'public'), {
   setHeaders: (res, filePath) => {
-    // No-cache for JS and CSS to prevent stale files after updates
-    if (/\.js$|\.css$/.test(filePath)) {
+    // No-cache for all assets to prevent stale files after updates
+    if (/\.js$|\.css$|\.html$/.test(filePath)) {
       res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
       res.setHeader('Pragma', 'no-cache');
       res.setHeader('Expires', '0');
@@ -273,6 +273,9 @@ app.get('/api/health', (req, res) => {
 // Serve index.html for all non-API routes (SPA fallback)
 app.get('*', (req, res) => {
   if (!req.path.startsWith('/api')) {
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
     res.sendFile(path.join(__dirname, '..', 'public', 'index.html'));
   } else {
     res.status(404).json({ success: false, error: 'API endpoint not found' });
