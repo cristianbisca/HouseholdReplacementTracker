@@ -278,18 +278,6 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-// Serve index.html for all non-API routes (SPA fallback)
-app.get('*', (req, res) => {
-  if (!req.path.startsWith('/api')) {
-    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
-    res.setHeader('Pragma', 'no-cache');
-    res.setHeader('Expires', '0');
-    res.sendFile(path.join(__dirname, '..', 'public', 'index.html'));
-  } else {
-    res.status(404).json({ success: false, error: 'API endpoint not found' });
-  }
-});
-
 // --- Telegram API Routes ---
 
 // Get Telegram status
@@ -366,6 +354,18 @@ app.post('/api/telegram/notify', (req, res) => {
         res.status(500).json({ success: false, error: error.message });
       }
     });
+});
+
+// Serve index.html for all non-API routes (SPA fallback)
+app.get('*', (req, res) => {
+  if (!req.path.startsWith('/api')) {
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+    res.sendFile(path.join(__dirname, '..', 'public', 'index.html'));
+  } else {
+    res.status(404).json({ success: false, error: 'API endpoint not found' });
+  }
 });
 
 // --- Server Startup ---
