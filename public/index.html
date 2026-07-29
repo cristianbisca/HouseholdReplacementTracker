@@ -20,6 +20,7 @@
           <span class="status-dot disconnected"></span>
           <span class="status-text">Connecting...</span>
         </div>
+        <button class="icon-btn" id="settingsBtn" title="Settings">⚙️</button>
         <button class="icon-btn" id="addNewItemBtn" title="Add New Item">+</button>
       </div>
     </div>
@@ -327,9 +328,63 @@
     </div>
   </div>
 
+  <!-- Telegram Settings Modal -->
+  <div class="modal-overlay" id="telegramModal">
+    <div class="modal" role="dialog" aria-labelledby="telegramModalTitle">
+      <div class="modal-header">
+        <h2 id="telegramModalTitle">🔔 Telegram Notifications</h2>
+        <button class="modal-close" data-modal="telegramModal">&times;</button>
+      </div>
+      
+      <div class="modal-body">
+        <div class="settings-info-box" id="telegramInfoBox">
+          <p><strong>Get daily notifications</strong> when items are due or overdue via Telegram.</p>
+          <p class="text-muted" style="margin-top: 8px;">Notifications are sent automatically every day at 8:00 AM.</p>
+        </div>
+
+        <!-- Status Indicator -->
+        <div class="telegram-status" id="telegramStatus">
+          <span class="status-dot disconnected" id="telegramStatusDot"></span>
+          <span class="status-text" id="telegramStatusText">Not configured</span>
+        </div>
+
+        <form id="telegramForm" class="modal-form">
+          <div class="form-group">
+            <label for="botToken">Bot Token</label>
+            <input type="text" id="botToken" name="bot_token" placeholder="123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11" autocomplete="off">
+            <small class="form-hint">Create a bot via <a href="https://t.me/BotFather" target="_blank">@BotFather</a> on Telegram and copy the token</small>
+          </div>
+
+          <div class="form-group">
+            <label for="chatId">Chat ID</label>
+            <input type="text" id="chatId" name="chat_id" placeholder="123456789">
+            <small class="form-hint">Send a message to your bot, then get your Chat ID from <a href="https://api.telegram.org/bot<BOT_TOKEN>/getUpdates" target="_blank">getUpdates</a> or ask <a href="https://t.me/myidbot">@myidbot</a></small>
+          </div>
+
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-modal-close="telegramModal">Cancel</button>
+            <button type="button" class="btn btn-secondary" id="testTelegramBtn" title="Send test message">📨 Test</button>
+            <button type="submit" class="btn btn-primary" id="saveTelegramBtn">Save & Enable</button>
+          </div>
+        </form>
+
+        <!-- Disable button (shown when configured) -->
+        <div class="modal-footer" id="telegramDisableFooter" style="display: none;">
+          <button type="button" class="btn btn-danger" id="disableTelegramBtn">Disable Notifications</button>
+        </div>
+
+        <!-- Due Items Preview -->
+        <div class="due-items-preview" id="dueItemsPreview" style="display: none;">
+          <h3>📋 Current Due Items</h3>
+          <div id="dueItemsList"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Toast Notification Container -->
   <div class="toast-container" id="toastContainer"></div>
 
-  <script src="/js/app.js?v=20260729-1"></script>
+  <script src="/js/app.js?v=20260729-2"></script>
 </body>
 </html>

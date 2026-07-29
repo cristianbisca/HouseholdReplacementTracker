@@ -19,7 +19,8 @@
     wsConnected: false,
     reconnectAttempts: 0,
     maxReconnectAttempts: 10,
-    settings: {}
+    settings: {},
+    telegramStatus: null
   };
 
   // --- DOM References ---
@@ -33,6 +34,7 @@
     dom.filterNav = document.getElementById('filterNav');
     dom.connectionStatus = document.getElementById('connectionStatus');
     dom.addNewItemBtn = document.getElementById('addNewItemBtn');
+    dom.settingsBtn = document.getElementById('settingsBtn');
     dom.backBtn = document.getElementById('backBtn');
     dom.currentUserSelect = document.getElementById('currentUserSelect');
     dom.addUserBtn = document.getElementById('addUserBtn');
@@ -43,12 +45,24 @@
     dom.replacementModal = document.getElementById('replacementModal');
     dom.usageModal = document.getElementById('usageModal');
     dom.userModal = document.getElementById('userModal');
+    dom.telegramModal = document.getElementById('telegramModal');
 
     // Forms
     dom.itemForm = document.getElementById('itemForm');
     dom.replacementForm = document.getElementById('replacementForm');
     dom.usageForm = document.getElementById('usageForm');
     dom.userForm = document.getElementById('userForm');
+    dom.telegramForm = document.getElementById('telegramForm');
+
+    // Telegram elements
+    dom.telegramStatusDot = document.getElementById('telegramStatusDot');
+    dom.telegramStatusText = document.getElementById('telegramStatusText');
+    dom.testTelegramBtn = document.getElementById('testTelegramBtn');
+    dom.saveTelegramBtn = document.getElementById('saveTelegramBtn');
+    dom.disableTelegramBtn = document.getElementById('disableTelegramBtn');
+    dom.telegramDisableFooter = document.getElementById('telegramDisableFooter');
+    dom.dueItemsPreview = document.getElementById('dueItemsPreview');
+    dom.dueItemsList = document.getElementById('dueItemsList');
 
     // Detail view elements
     dom.detailHeader = document.getElementById('detailHeader');
@@ -109,6 +123,164 @@
     } catch (error) {
       console.error('Failed to load settings:', error);
     }
+  }
+
+  // --- Telegram Functions ---
+  async function loadTelegramStatus() {
+    try {
+      const result = await apiRequest('GET', '/api/telegram/status');
+      state.telegramStatus = result.data;
+      updateTelegramUI();
+    } catch (error) {
+      console.error('Failed to load Telegram status:', error);
+    }
+  }
+
+  function updateTelegramUI() {
+    if (!state.telegramStatus) return;
+
+    const { isEnabled, isConfigured, botTokenMasked, chatId } = state.telegramStatus;
+
+    // Update status indicator
+    if (isEnabled && isConfigured) {
+      dom.telegramStatusDot.className = 'status-dot connected';
+      dom.telegramStatusText.textContent = `Active (${botTokenMasked})`;
+      dom.telegramForm.style.display = 'none';
+      dom.telegramDisableFooter.style.display = 'flex';
+      
+      // Load due items preview
+      loadDueItemsPreview();
+    } else if (isConfigured) {
+      dom.telegramStatusDot.className = 'status-dot disconnected';
+      dom.telegramStatusText.textContent = 'Configured but disabled';
+      dom.telegramForm.style.display = 'block';
+      dom.telegramDisableFooter.style.display = 'flex';
+      
+      // Pre-fill form with existing values
+      document.getElementById('botToken').value = botTokenMasked || '';
+    } else {
+      dom.telegramStatusDot.className = 'status-dot disconnected';
+      dom.telegramStatusText.textContent = 'Not configured';
+      dom.telegramForm.style.display = 'block';
+      dom.telegramDisableFooter.style.display = 'none';
+      dom.dueItemsPreview.style.display = 'none';
+    }
+  }
+
+  async function loadDueItemsPreview() {
+    try {
+      const result = await apiRequest('GET', '/api/telegram/due-items');
+      const { dueItems, upcomingItems } = result.data;
+      
+      if (dueItems.length === 0 && upcomingItems.length === 0) {
+        dom.dueItemsPreview.style.display = 'none';
+        return;
+      }
+
+      let html = '';
+      
+      // Overdue items
+      const overdueItems = dueItems.filter(i => i.status === 'overdue');
+      if (overdueItems.length > 0) {
+        html += '<div class="due-category"><h4>🔴 Overdue</h4>';
+        for (const item of overdueItems) {
+          html += `<div class="due-item"><span class="item-name">${escapeHtml(item.name)}</span><span class="item-days">${item.daysOverdue} day(s) overdue</span></div>`;
+        }
+        html += '</div>';
+      }
+
+      // Due today
+      const dueTodayItems = dueItems.filter(i => i.status === 'due_today');
+      if (dueTodayItems.length > 0) {
+        html += '<div class="due-category"><h4>🟡 Due Today</h4>';
+        for (const item of dueTodayItems) {
+          html += `<div class="due-item"><span class="item-name">${escapeHtml(item.name)}</span><span class="item-days">Due today!</span></div>`;
+        }
+        html += '</div>';
+      }
+
+      // Upcoming
+      if (upcomingItems.length > 0) {
+        html += '<div class="due-category"><h4>🔵 Coming Soon</h4>';
+        for (const item of upcomingItems) {
+          const daysText = item.days_until_due === 1 ? '1 day' : `${item.days_until_due} days`;
+          html += `<div class="due-item"><span class="item-name">${escapeHtml(item.name)}</span><span class="item-days">in ${daysText}</span></div>`;
+        }
+        html += '</div>';
+      }
+
+      dom.dueItemsList.innerHTML = html;
+      dom.dueItemsPreview.style.display = 'block';
+    } catch (error) {
+      console.error('Failed to load due items:', error);
+    }
+  }
+
+  async function handleTelegramSubmit(e) {
+    e.preventDefault();
+
+    const botToken = document.getElementById('botToken').value.trim();
+    const chatId = document.getElementById('chatId').value.trim();
+
+    if (!botToken || !chatId) {
+      showToast('Please fill in both Bot Token and Chat ID', 'warning');
+      return;
+    }
+
+    try {
+      dom.saveTelegramBtn.disabled = true;
+      dom.saveTelegramBtn.textContent = 'Saving...';
+      
+      await apiRequest('POST', '/api/telegram/configure', { bot_token: botToken, chat_id: chatId });
+      
+      showToast('Telegram notifications enabled!', 'success');
+      await loadTelegramStatus();
+    } catch (error) {
+      console.error('Failed to configure Telegram:', error);
+    } finally {
+      dom.saveTelegramBtn.disabled = false;
+      dom.saveTelegramBtn.textContent = 'Save & Enable';
+    }
+  }
+
+  async function handleTestTelegram() {
+    try {
+      dom.testTelegramBtn.disabled = true;
+      dom.testTelegramBtn.textContent = 'Sending...';
+      
+      await apiRequest('POST', '/api/telegram/test');
+      
+      showToast('Test message sent! Check your Telegram.', 'success');
+    } catch (error) {
+      console.error('Failed to send test message:', error);
+      showToast('Failed to send test. Check your credentials.', 'error');
+    } finally {
+      dom.testTelegramBtn.disabled = false;
+      dom.testTelegramBtn.textContent = '📨 Test';
+    }
+  }
+
+  async function handleDisableTelegram() {
+    if (!confirm('Are you sure you want to disable Telegram notifications?')) return;
+
+    try {
+      await apiRequest('POST', '/api/telegram/disable');
+      
+      showToast('Telegram notifications disabled', 'info');
+      await loadTelegramStatus();
+    } catch (error) {
+      console.error('Failed to disable Telegram:', error);
+    }
+  }
+
+  function openTelegramModal() {
+    document.getElementById('botToken').value = '';
+    document.getElementById('chatId').value = '';
+    dom.dueItemsPreview.style.display = 'none';
+    
+    // Load current status when opening modal
+    loadTelegramStatus();
+    openModal('telegramModal');
   }
 
   // --- WebSocket Connection ---
@@ -652,6 +824,9 @@
     // Add new item button
     dom.addNewItemBtn.addEventListener('click', () => openItemModal());
 
+    // Settings button (Telegram)
+    dom.settingsBtn.addEventListener('click', openTelegramModal);
+
     // Back button
     dom.backBtn.addEventListener('click', showListView);
 
@@ -688,6 +863,18 @@
 
     // User form submit
     dom.userForm.addEventListener('submit', handleUserSubmit);
+
+    // Telegram form submit
+    dom.telegramForm.addEventListener('submit', handleTelegramSubmit);
+
+    // Test Telegram button
+    dom.testTelegramBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      handleTestTelegram();
+    });
+
+    // Disable Telegram button
+    dom.disableTelegramBtn.addEventListener('click', handleDisableTelegram);
 
     // Edit item button
     dom.editItemBtn.addEventListener('click', () => {

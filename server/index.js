@@ -4,7 +4,9 @@ const express = require('express');
 const http = require('http');
 const WebSocket = require('ws');
 const path = require('path');
+const cron = require('node-cron');
 const db = require('./database');
+const telegram = require('./telegram');
 
 const app = express();
 const server = http.createServer(app);
@@ -288,6 +290,84 @@ app.get('*', (req, res) => {
   }
 });
 
+// --- Telegram API Routes ---
+
+// Get Telegram status
+app.get('/api/telegram/status', (req, res) => {
+  try {
+    const status = telegram.getStatus();
+    res.json({ success: true, data: status });
+  } catch (error) {
+    console.error('Error getting Telegram status:', error);
+    res.status(500).json({ success: false, error: 'Failed to get Telegram status' });
+  }
+});
+
+// Configure Telegram bot
+app.post('/api/telegram/configure', (req, res) => {
+  try {
+    const { bot_token, chat_id } = req.body;
+    
+    if (!bot_token || !chat_id) {
+      return res.status(400).json({ success: false, error: 'bot_token and chat_id are required' });
+    }
+
+    telegram.configureTelegram(bot_token, chat_id);
+    res.json({ success: true, data: telegram.getStatus() });
+  } catch (error) {
+    console.error('Error configuring Telegram:', error);
+    res.status(500).json({ success: false, error: 'Failed to configure Telegram' });
+  }
+});
+
+// Disable Telegram notifications
+app.post('/api/telegram/disable', (req, res) => {
+  try {
+    telegram.disableTelegram();
+    res.json({ success: true, data: telegram.getStatus() });
+  } catch (error) {
+    console.error('Error disabling Telegram:', error);
+    res.status(500).json({ success: false, error: 'Failed to disable Telegram' });
+  }
+});
+
+// Test Telegram connection
+app.post('/api/telegram/test', (req, res) => {
+  telegram.testConnection()
+    .then((result) => {
+      res.json({ success: true, data: result });
+    })
+    .catch((error) => {
+      res.status(500).json({ success: false, error: error.message });
+    });
+});
+
+// Get due items report
+app.get('/api/telegram/due-items', (req, res) => {
+  try {
+    const report = telegram.getDueItems();
+    res.json({ success: true, data: report });
+  } catch (error) {
+    console.error('Error getting due items:', error);
+    res.status(500).json({ success: false, error: 'Failed to get due items' });
+  }
+});
+
+// Manual trigger notification
+app.post('/api/telegram/notify', (req, res) => {
+  telegram.sendDailyNotification()
+    .then((result) => {
+      res.json({ success: true, data: result });
+    })
+    .catch((error) => {
+      if (error.message.includes('not configured')) {
+        res.status(400).json({ success: false, error: error.message });
+      } else {
+        res.status(500).json({ success: false, error: error.message });
+      }
+    });
+});
+
 // --- Server Startup ---
 const PORT = process.env.PORT || 3000;
 
@@ -296,6 +376,9 @@ async function startServer() {
     // Initialize database
     await db.initDatabase();
     console.log('Database initialized successfully');
+
+    // Initialize Telegram bot
+    telegram.initTelegram();
 
     // Start HTTP server
     server.listen(PORT, '0.0.0.0', () => {
@@ -326,6 +409,13 @@ async function startServer() {
     setInterval(() => {
       db.saveDatabase();
     }, 30000);
+
+    // Daily Telegram notification at 8:00 AM
+    cron.schedule('0 8 * * *', () => {
+      console.log('[Cron] Running daily Telegram notification check...');
+      telegram.sendDailyNotification();
+    });
+    console.log('[Cron] Daily notification scheduler started (runs at 8:00 AM)');
 
   } catch (error) {
     console.error('Failed to start server:', error);
