@@ -73,8 +73,18 @@ function sendMessage(message) {
           console.log('[Telegram] Message sent successfully');
           resolve(JSON.parse(responseBody));
         } else {
-          console.error('[Telegram] Failed to send message:', res.statusCode, responseBody);
-          reject(new Error(`Telegram API error: ${res.statusCode} - ${responseBody}`));
+          const parsed = JSON.parse(responseBody);
+          const desc = parsed.description || responseBody;
+          console.error('[Telegram] Failed to send message:', res.statusCode, desc);
+          
+          // Provide helpful error messages for common issues
+          if (desc.includes('chat not found')) {
+            reject(new Error(`Chat ID "${chatId}" is invalid or the bot has not been added to that chat. Make sure you started a conversation with your bot first, then use your personal Chat ID from @myidbot on Telegram.`));
+          } else if (desc.includes('not found') || desc.includes('Unauthorized')) {
+            reject(new Error(`Bot token appears invalid. Please check your token from @BotFather on Telegram.`));
+          } else {
+            reject(new Error(`Telegram API error: ${res.statusCode} - ${desc}`));
+          }
         }
       });
     });
