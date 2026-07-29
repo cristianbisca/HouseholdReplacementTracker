@@ -145,7 +145,13 @@
     if (isEnabled && isConfigured) {
       dom.telegramStatusDot.className = 'status-dot connected';
       dom.telegramStatusText.textContent = `Active (${botTokenMasked})`;
-      dom.telegramForm.style.display = 'none';
+      
+      // Hide the form fields but keep the test button visible
+      document.getElementById('botToken').closest('.form-group').style.display = 'none';
+      document.getElementById('chatId').closest('.form-group').style.display = 'none';
+      document.getElementById('telegramInfoBox').style.display = 'none';
+      dom.saveTelegramBtn.style.display = 'none';
+      dom.testTelegramBtn.style.display = 'inline-block';
       dom.telegramDisableFooter.style.display = 'flex';
       
       // Load due items preview
@@ -153,7 +159,13 @@
     } else if (isConfigured) {
       dom.telegramStatusDot.className = 'status-dot disconnected';
       dom.telegramStatusText.textContent = 'Configured but disabled';
-      dom.telegramForm.style.display = 'block';
+      
+      // Show all form elements
+      document.getElementById('botToken').closest('.form-group').style.display = 'block';
+      document.getElementById('chatId').closest('.form-group').style.display = 'block';
+      document.getElementById('telegramInfoBox').style.display = 'block';
+      dom.saveTelegramBtn.style.display = 'inline-block';
+      dom.testTelegramBtn.style.display = 'inline-block';
       dom.telegramDisableFooter.style.display = 'flex';
       
       // Pre-fill form with existing values
@@ -161,7 +173,13 @@
     } else {
       dom.telegramStatusDot.className = 'status-dot disconnected';
       dom.telegramStatusText.textContent = 'Not configured';
-      dom.telegramForm.style.display = 'block';
+      
+      // Show all form elements
+      document.getElementById('botToken').closest('.form-group').style.display = 'block';
+      document.getElementById('chatId').closest('.form-group').style.display = 'block';
+      document.getElementById('telegramInfoBox').style.display = 'block';
+      dom.saveTelegramBtn.style.display = 'inline-block';
+      dom.testTelegramBtn.style.display = 'inline-block';
       dom.telegramDisableFooter.style.display = 'none';
       dom.dueItemsPreview.style.display = 'none';
     }
