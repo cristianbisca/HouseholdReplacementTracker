@@ -8,6 +8,31 @@
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏠</text></svg>">
 </head>
 <body>
+  <!-- Login Overlay -->
+  <div class="login-overlay" id="loginOverlay">
+    <div class="login-container">
+      <div class="login-logo">🏠</div>
+      <h1 class="login-title">Household Replacement Tracker</h1>
+      <p class="login-subtitle">Sign in to continue</p>
+      
+      <form id="loginForm" class="login-form">
+        <div class="form-group">
+          <label for="loginUsername">Username</label>
+          <input type="text" id="loginUsername" name="username" required autocomplete="username" placeholder="Enter username">
+        </div>
+        
+        <div class="form-group">
+          <label for="loginPassword">Password</label>
+          <input type="password" id="loginPassword" name="password" required autocomplete="current-password" placeholder="Enter password">
+        </div>
+        
+        <div class="login-error" id="loginError" style="display: none;"></div>
+        
+        <button type="submit" class="btn btn-primary btn-login" id="loginBtn">Sign In</button>
+      </form>
+    </div>
+  </div>
+
   <!-- Header -->
   <header class="app-header" id="appHeader">
     <div class="header-content">
@@ -15,14 +40,15 @@
         <h1 class="app-title">🏠 HRT</h1>
         <span class="app-subtitle" id="appSubtitle">Household Replacement Tracker</span>
       </div>
-      <div class="header-right">
-        <div class="connection-status" id="connectionStatus">
-          <span class="status-dot disconnected"></span>
-          <span class="status-text">Connecting...</span>
+        <div class="header-right">
+          <div class="connection-status" id="connectionStatus">
+            <span class="status-dot disconnected"></span>
+            <span class="status-text">Connecting...</span>
+          </div>
+          <button class="icon-btn" id="logoutBtn" title="Logout">🚪</button>
+          <button class="icon-btn" id="settingsBtn" title="Settings">⚙️</button>
+          <button class="icon-btn" id="addNewItemBtn" title="Add New Item">+</button>
         </div>
-        <button class="icon-btn" id="settingsBtn" title="Settings">⚙️</button>
-        <button class="icon-btn" id="addNewItemBtn" title="Add New Item">+</button>
-      </div>
     </div>
   </header>
 

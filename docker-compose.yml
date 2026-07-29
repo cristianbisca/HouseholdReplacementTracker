@@ -5,6 +5,10 @@ services:
     build: .
     container_name: household-replacement-tracker
     network_mode: host
+    environment:
+      - ADMIN_USER=${ADMIN_USER:-admin}
+      - ADMIN_PASS=${ADMIN_PASS:-admin}
+      - PORT=3000
     volumes:
       - hrt-data:/app/data
     restart: unless-stopped

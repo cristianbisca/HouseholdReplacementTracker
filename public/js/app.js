@@ -20,8 +20,113 @@
     reconnectAttempts: 0,
     maxReconnectAttempts: 10,
     settings: {},
-    telegramStatus: null
+    telegramStatus: null,
+    authToken: localStorage.getItem('hrt_auth_token') || '',
+    authenticated: false
   };
+
+  // --- Authentication Functions ---
+  async function checkAuth() {
+    if (state.authToken) {
+      try {
+        const response = await fetch('/api/auth/verify', {
+          headers: { 'Authorization': `Bearer ${state.authToken}` }
+        });
+        const data = await response.json();
+        if (data.success) {
+          state.authenticated = true;
+          hideLoginOverlay();
+          return true;
+        }
+      } catch (error) {
+        console.error('Auth verification failed:', error);
+      }
+    }
+    state.authenticated = false;
+    state.authToken = '';
+    localStorage.removeItem('hrt_auth_token');
+    showLoginOverlay();
+    return false;
+  }
+
+  function showLoginOverlay() {
+    const overlay = document.getElementById('loginOverlay');
+    if (overlay) overlay.style.display = 'flex';
+  }
+
+  function hideLoginOverlay() {
+    const overlay = document.getElementById('loginOverlay');
+    if (overlay) overlay.style.display = 'none';
+  }
+
+  async function handleLogin(e) {
+    e.preventDefault();
+    const username = document.getElementById('loginUsername').value.trim();
+    const password = document.getElementById('loginPassword').value;
+    const errorEl = document.getElementById('loginError');
+    const loginBtn = document.getElementById('loginBtn');
+
+    if (!username || !password) {
+      errorEl.textContent = 'Please enter both username and password';
+      errorEl.style.display = 'block';
+      return;
+    }
+
+    try {
+      loginBtn.disabled = true;
+      loginBtn.textContent = 'Signing in...';
+      errorEl.style.display = 'none';
+
+      const response = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password })
+      });
+
+      const data = await response.json();
+
+      if (data.success && data.data.token) {
+        state.authToken = data.data.token;
+        localStorage.setItem('hrt_auth_token', state.authToken);
+        state.authenticated = true;
+        hideLoginOverlay();
+        loadSettings();
+        loadItems();
+        connectWebSocket();
+      } else {
+        errorEl.textContent = data.error || 'Invalid credentials. Please try again.';
+        errorEl.style.display = 'block';
+      }
+    } catch (error) {
+      console.error('Login error:', error);
+      errorEl.textContent = 'Connection failed. Please check your network and try again.';
+      errorEl.style.display = 'block';
+    } finally {
+      loginBtn.disabled = false;
+      loginBtn.textContent = 'Sign In';
+    }
+  }
+
+  async function handleLogout() {
+    if (!confirm('Are you sure you want to sign out?')) return;
+    try {
+      await fetch('/api/auth/logout', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${state.authToken}` }
+      });
+    } catch (error) {
+      console.error('Logout error:', error);
+    }
+    state.authToken = '';
+    state.authenticated = false;
+    localStorage.removeItem('hrt_auth_token');
+    if (state.ws) state.ws.close();
+    showLoginOverlay();
+  }
+
+  function getAuthHeaders() {
+    return { 'Authorization': `Bearer ${state.authToken}` };
+  }
 
   // --- DOM References ---
   const dom = {};
@@ -82,7 +187,10 @@
     try {
       const options = {
         method,
-        headers: { 'Content-Type': 'application/json' }
+        headers: { 
+          'Content-Type': 'application/json',
+          ...getAuthHeaders()
+        }
       };
       
       if (body) {
@@ -90,6 +198,15 @@
       }
 
       const response = await fetch(path, options);
+      
+      // If unauthorized, redirect to login
+      if (response.status === 401) {
+        state.authToken = '';
+        localStorage.removeItem('hrt_auth_token');
+        showLoginOverlay();
+        throw new Error('Session expired. Please sign in again.');
+      }
+      
       const data = await response.json();
 
       if (!data.success) {
@@ -99,7 +216,9 @@
       return data;
     } catch (error) {
       console.error('API Error:', error);
-      showToast(error.message, 'error');
+      if (error.message && !error.message.includes('Session expired')) {
+        showToast(error.message, 'error');
+      }
       throw error;
     }
   }
@@ -1147,12 +1266,26 @@
     setupEventListeners();
     renderUserSelect();
     
-    // Load data
-    loadSettings();
-    loadItems();
+    // Setup login form
+    const loginForm = document.getElementById('loginForm');
+    if (loginForm) {
+      loginForm.addEventListener('submit', handleLogin);
+    }
     
-    // Connect WebSocket
-    connectWebSocket();
+    // Setup logout button
+    const logoutBtn = document.getElementById('logoutBtn');
+    if (logoutBtn) {
+      logoutBtn.addEventListener('click', handleLogout);
+    }
+    
+    // Check authentication first before loading data
+    checkAuth().then((isAuthenticated) => {
+      if (isAuthenticated) {
+        loadSettings();
+        loadItems();
+        connectWebSocket();
+      }
+    });
   }
 
   // Start the app when DOM is ready

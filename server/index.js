@@ -7,6 +7,7 @@ const path = require('path');
 const cron = require('node-cron');
 const db = require('./database');
 const telegram = require('./telegram');
+const auth = require('./auth');
 
 const app = express();
 const server = http.createServer(app);
@@ -94,10 +95,55 @@ function broadcast(message, excludeClientId = null) {
   }
 }
 
-// --- API Routes ---
+// --- Auth Routes (public) ---
+
+// Login
+app.post('/api/auth/login', (req, res) => {
+  try {
+    const { username, password } = req.body;
+    if (!username || !password) {
+      return res.status(400).json({ success: false, error: 'Username and password required' });
+    }
+
+    const token = auth.login(username, password);
+    if (!token) {
+      return res.status(401).json({ success: false, error: 'Invalid credentials' });
+    }
+
+    res.json({ success: true, data: { token } });
+  } catch (error) {
+    console.error('Error during login:', error);
+    res.status(500).json({ success: false, error: 'Login failed' });
+  }
+});
+
+// Logout
+app.post('/api/auth/logout', (req, res) => {
+  try {
+    const authHeader = req.headers.authorization || '';
+    const token = authHeader.replace('Bearer ', '');
+
+    auth.logout(token);
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error during logout:', error);
+    res.status(500).json({ success: false, error: 'Logout failed' });
+  }
+});
+
+// Verify current session
+app.get('/api/auth/verify', (req, res) => {
+  const authHeader = req.headers.authorization || '';
+  const token = authHeader.replace('Bearer ', '');
+
+  const session = auth.validateToken(token);
+  res.json({ success: !!session });
+});
+
+// --- API Routes (protected) ---
 
 // Get all items
-app.get('/api/items', (req, res) => {
+app.get('/api/items', auth.requireAuth, (req, res) => {
   try {
     const items = db.getAllItems();
     res.json({ success: true, data: items });
@@ -108,7 +154,7 @@ app.get('/api/items', (req, res) => {
 });
 
 // Get single item
-app.get('/api/items/:id', (req, res) => {
+app.get('/api/items/:id', auth.requireAuth, (req, res) => {
   try {
     const item = db.getItemById(req.params.id);
     if (!item) {
@@ -122,7 +168,7 @@ app.get('/api/items/:id', (req, res) => {
 });
 
 // Create new item
-app.post('/api/items', (req, res) => {
+app.post('/api/items', auth.requireAuth, (req, res) => {
   try {
     const item = db.createItem(req.body);
     
@@ -139,7 +185,7 @@ app.post('/api/items', (req, res) => {
 });
 
 // Update item
-app.put('/api/items/:id', (req, res) => {
+app.put('/api/items/:id', auth.requireAuth, (req, res) => {
   try {
     const item = db.updateItem(req.params.id, req.body);
     if (!item) {
@@ -159,7 +205,7 @@ app.put('/api/items/:id', (req, res) => {
 });
 
 // Delete item
-app.delete('/api/items/:id', (req, res) => {
+app.delete('/api/items/:id', auth.requireAuth, (req, res) => {
   try {
     const item = db.getItemById(req.params.id);
     if (!item) {
@@ -181,7 +227,7 @@ app.delete('/api/items/:id', (req, res) => {
 });
 
 // Record replacement (One-Tap Reset)
-app.post('/api/items/:id/replace', (req, res) => {
+app.post('/api/items/:id/replace', auth.requireAuth, (req, res) => {
   try {
     const { notes, replaced_by } = req.body;
     
@@ -203,7 +249,7 @@ app.post('/api/items/:id/replace', (req, res) => {
 });
 
 // Increment usage counter
-app.post('/api/items/:id/usage', (req, res) => {
+app.post('/api/items/:id/usage', auth.requireAuth, (req, res) => {
   try {
     const { amount } = req.body;
     
@@ -229,7 +275,7 @@ app.post('/api/items/:id/usage', (req, res) => {
 });
 
 // Get replacement history for an item
-app.get('/api/items/:id/history', (req, res) => {
+app.get('/api/items/:id/history', auth.requireAuth, (req, res) => {
   try {
     const history = db.getReplacementHistory(req.params.id);
     res.json({ success: true, data: history });
@@ -240,7 +286,7 @@ app.get('/api/items/:id/history', (req, res) => {
 });
 
 // Get settings
-app.get('/api/settings', (req, res) => {
+app.get('/api/settings', auth.requireAuth, (req, res) => {
   try {
     const settings = db.getSettings();
     res.json({ success: true, data: settings });
@@ -251,7 +297,7 @@ app.get('/api/settings', (req, res) => {
 });
 
 // Update setting
-app.put('/api/settings/:key', (req, res) => {
+app.put('/api/settings/:key', auth.requireAuth, (req, res) => {
   try {
     db.updateSetting(req.params.key, req.body.value);
     const settings = db.getSettings();
@@ -292,7 +338,7 @@ app.get('/api/telegram/status', (req, res) => {
 });
 
 // Configure Telegram bot
-app.post('/api/telegram/configure', (req, res) => {
+app.post('/api/telegram/configure', auth.requireAuth, (req, res) => {
   try {
     const { bot_token, chat_id } = req.body;
     
@@ -309,7 +355,7 @@ app.post('/api/telegram/configure', (req, res) => {
 });
 
 // Disable Telegram notifications
-app.post('/api/telegram/disable', (req, res) => {
+app.post('/api/telegram/disable', auth.requireAuth, (req, res) => {
   try {
     telegram.disableTelegram();
     res.json({ success: true, data: telegram.getStatus() });
@@ -320,7 +366,7 @@ app.post('/api/telegram/disable', (req, res) => {
 });
 
 // Test Telegram connection
-app.post('/api/telegram/test', (req, res) => {
+app.post('/api/telegram/test', auth.requireAuth, (req, res) => {
   telegram.testConnection()
     .then((result) => {
       res.json({ success: true, data: result });
@@ -331,7 +377,7 @@ app.post('/api/telegram/test', (req, res) => {
 });
 
 // Get due items report
-app.get('/api/telegram/due-items', (req, res) => {
+app.get('/api/telegram/due-items', auth.requireAuth, (req, res) => {
   try {
     const report = telegram.getDueItems();
     res.json({ success: true, data: report });
@@ -342,7 +388,7 @@ app.get('/api/telegram/due-items', (req, res) => {
 });
 
 // Manual trigger notification
-app.post('/api/telegram/notify', (req, res) => {
+app.post('/api/telegram/notify', auth.requireAuth, (req, res) => {
   telegram.sendDailyNotification()
     .then((result) => {
       res.json({ success: true, data: result });
@@ -373,6 +419,9 @@ const PORT = process.env.PORT || 3000;
 
 async function startServer() {
   try {
+    // Initialize auth
+    auth.initAuth();
+
     // Initialize database
     await db.initDatabase();
     console.log('Database initialized successfully');
