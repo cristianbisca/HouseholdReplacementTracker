@@ -145,6 +145,18 @@ function getAllItems() {
     // Convert boolean-like integers
     item.usage_enabled = !!item.usage_enabled;
     item.is_overdue = !!item.is_overdue;
+    // Recalculate days_until_due and is_overdue on every load to ensure freshness
+    if (item.next_due_date) {
+      item.days_until_due = calculateDaysUntilDue(item.next_due_date);
+      item.is_overdue = item.days_until_due < 0;
+    } else {
+      item.days_until_due = null;
+      item.is_overdue = false;
+    }
+    // Recalculate usage_percentage for usage-based items
+    if (item.usage_enabled && item.usage_interval_value) {
+      item.usage_percentage = calculateUsagePercentage(item.current_usage_count || 0, item.usage_interval_value);
+    }
     return item;
   });
 }
@@ -161,6 +173,18 @@ function getItemById(id) {
   });
   item.usage_enabled = !!item.usage_enabled;
   item.is_overdue = !!item.is_overdue;
+  // Recalculate days_until_due and is_overdue to ensure freshness
+  if (item.next_due_date) {
+    item.days_until_due = calculateDaysUntilDue(item.next_due_date);
+    item.is_overdue = item.days_until_due < 0;
+  } else {
+    item.days_until_due = null;
+    item.is_overdue = false;
+  }
+  // Recalculate usage_percentage for usage-based items
+  if (item.usage_enabled && item.usage_interval_value) {
+    item.usage_percentage = calculateUsagePercentage(item.current_usage_count || 0, item.usage_interval_value);
+  }
   return item;
 }
 
