@@ -252,6 +252,19 @@
       default:
         state.filteredItems = [...state.items];
     }
+
+    // Sort by due date (most urgent first)
+    state.filteredItems.sort((a, b) => {
+      // Items without next_due_date go to the bottom
+      if (!a.next_due_date && !b.next_due_date) return 0;
+      if (!a.next_due_date) return 1;
+      if (!b.next_due_date) return -1;
+
+      // Compare by days_until_due (ascending, most urgent first)
+      const daysA = a.days_until_due ?? Infinity;
+      const daysB = b.days_until_due ?? Infinity;
+      return daysA - daysB;
+    });
   }
 
   // --- Rendering Functions ---
@@ -310,6 +323,18 @@
     }
 
     cardContent += '</div>';
+
+    // Date tags row (last replaced & next due)
+    if (item.last_replaced_date || item.next_due_date) {
+      cardContent += '<div class="card-date-tags">';
+      if (item.last_replaced_date) {
+        cardContent += `<span class="date-tag"><span class="date-tag-label">Last replaced</span> <span class="date-tag-value">${formatDate(item.last_replaced_date)}</span></span>`;
+      }
+      if (item.next_due_date) {
+        cardContent += `<span class="date-tag"><span class="date-tag-label">Next due</span> <span class="date-tag-value">${formatDate(item.next_due_date)}</span></span>`;
+      }
+      cardContent += '</div>';
+    }
 
     // Action buttons
     cardContent += '<div class="card-actions">';

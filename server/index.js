@@ -10,7 +10,16 @@ const wss = new WebSocket.Server({ server });
 
 // --- Middleware ---
 app.use(express.json());
-app.use(express.static(path.join(__dirname, '..', 'public')));
+app.use(express.static(path.join(__dirname, '..', 'public'), {
+  setHeaders: (res, filePath) => {
+    // No-cache for JS and CSS to prevent stale files after updates
+    if (/\.js$|\.css$/.test(filePath)) {
+      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+      res.setHeader('Pragma', 'no-cache');
+      res.setHeader('Expires', '0');
+    }
+  }
+}));
 
 // --- CORS Headers (for local network access) ---
 app.use((req, res, next) => {
