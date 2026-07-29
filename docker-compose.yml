@@ -2,8 +2,7 @@ version: "3"
 
 services:
   household-replacement-tracker:
-    image: ghcr.io/cristianbisca/householdreplacementtracker:latest
-    pull_policy: always
+    build: .
     container_name: household-replacement-tracker
     ports:
       - "3000:3000"
