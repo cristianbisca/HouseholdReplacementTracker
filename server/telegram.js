@@ -59,11 +59,12 @@ function sendMessage(message) {
   });
 
   return new Promise((resolve, reject) => {
+    const buffer = Buffer.from(data);
     const req = https.request(url, {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json',
-        'Content-Length': data.length
+        'Content-Type': 'application/json; charset=utf-8',
+        'Content-Length': buffer.length
       }
     }, (res) => {
       let responseBody = '';
@@ -94,7 +95,7 @@ function sendMessage(message) {
       reject(error);
     });
 
-    req.write(data);
+    req.write(buffer);
     req.end();
   });
 }
