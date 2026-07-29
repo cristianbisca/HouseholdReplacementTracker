@@ -12,3 +12,4 @@ services:
 
 volumes:
   hrt-data:
+    external: true
