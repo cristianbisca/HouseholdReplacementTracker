@@ -17,4 +17,6 @@ services:
 
 volumes:
   hrt-data:
+    external: true
   hrt-certs:
+    external: true
