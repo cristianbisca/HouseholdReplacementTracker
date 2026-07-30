@@ -26,7 +26,7 @@ services:
     profiles: ["tools"]
 
   # Web-based cert uploader - deploy temporarily to upload cPanel certs.
-  # Mounts hrt-certs volume, serves a web UI on port 8081.
+  # Only starts when explicitly enabled via --profile tools or COMPOSE_PROFILES=tools
   # IMPORTANT: Stop and remove this container after uploading (no auth!)!
   cert-uploader:
     build: ./certs/upload-server
@@ -35,7 +35,7 @@ services:
       - hrt-certs:/certs
     ports:
       - "8081:8080"
-    restart: "no"
+    profiles: ["tools"]
 
 volumes:
   hrt-data:
