@@ -158,7 +158,7 @@ function getDueItems() {
 
 /**
  * Find items that match a specific reminder offset and haven't been notified yet.
- * @param {number} daysBefore - The T-minus offset (2, 1, or 0)
+ * @param {number} daysBefore - The T-minus offset (7, 2, or 0)
  * @returns {Array} Items matching this reminder window
  */
 function getItemsForReminder(daysBefore) {
@@ -181,29 +181,44 @@ function getItemsForReminder(daysBefore) {
 }
 
 /**
+ * Format a date for display in notifications.
+ */
+function formatDate(dateStr) {
+  const date = new Date(dateStr + 'T00:00:00');
+  const options = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
+  return date.toLocaleDateString('en-US', options);
+}
+
+/**
  * Build a formatted message for a specific reminder type.
  */
 function buildReminderMessage(items, daysBefore) {
   let message = '🏠 <b>Household Replacement Tracker</b>\n\n';
 
   if (daysBefore === 0) {
+    // T notification: say "today" instead of due date
     message += `🔴 <b>DUE TODAY</b> — please replace soon!\n\n`;
     for (const item of items) {
       message += `• <b>${item.name}</b>\n`;
-      if (item.category) message += `  Category: ${item.category}\n`;
-      if (item.part_number) message += `  Part #: ${item.part_number}\n`;
-    }
-  } else if (daysBefore === 1) {
-    message += `🟡 <b>TOMORROW</b> is the due date for:\n\n`;
-    for (const item of items) {
-      message += `• <b>${item.name}</b>\n`;
+      message += `  Due: today\n`;
       if (item.category) message += `  Category: ${item.category}\n`;
       if (item.part_number) message += `  Part #: ${item.part_number}\n`;
     }
   } else if (daysBefore === 2) {
-    message += `🔵 <b>IN 2 DAYS</b> the following will be due:\n\n`;
+    // T-2 notification: include due date
+    message += `🟡 <b>Due in 2 days</b> for the following items:\n\n`;
     for (const item of items) {
       message += `• <b>${item.name}</b>\n`;
+      message += `  Due: ${formatDate(item.next_due_date)}\n`;
+      if (item.category) message += `  Category: ${item.category}\n`;
+      if (item.part_number) message += `  Part #: ${item.part_number}\n`;
+    }
+  } else if (daysBefore === 7) {
+    // T-7 notification: include due date
+    message += `🔵 <b>Due in 7 days</b> for the following items:\n\n`;
+    for (const item of items) {
+      message += `• <b>${item.name}</b>\n`;
+      message += `  Due: ${formatDate(item.next_due_date)}\n`;
       if (item.category) message += `  Category: ${item.category}\n`;
       if (item.part_number) message += `  Part #: ${item.part_number}\n`;
     }
@@ -218,8 +233,8 @@ function sendDailyNotification() {
     return;
   }
 
-  // Send reminders for T-2, T-1, and T (due date)
-  const reminderOffsets = [2, 1, 0];
+  // Send reminders for T-7, T-2, and T (due date)
+  const reminderOffsets = [7, 2, 0];
   let sentCount = 0;
 
   const promises = [];
