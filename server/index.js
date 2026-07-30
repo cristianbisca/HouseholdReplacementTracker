@@ -2,6 +2,9 @@ const BUILD_TIMESTAMP = '2026-07-29T18:18:00Z';
 
 const express = require('express');
 const http = require('http');
+const https = require('https');
+const fs = require('fs');
+const { execSync } = require('child_process');
 const WebSocket = require('ws');
 const path = require('path');
 const cron = require('node-cron');
@@ -10,7 +13,81 @@ const telegram = require('./telegram');
 const auth = require('./auth');
 
 const app = express();
-const server = http.createServer(app);
+
+// --- TLS/HTTPS Configuration ---
+// Controlled by TLS_MODE env var: 'auto' (default) or 'off'
+// Certs are stored in /app/certs inside the container.
+// If certs don't exist and TLS_MODE=auto, self-signed certs are generated at startup.
+const CERTS_DIR = path.join(__dirname, '..', 'certs');
+const CERT_PATH = process.env.TLS_CERT || path.join(CERTS_DIR, 'cert.pem');
+const KEY_PATH  = process.env.TLS_KEY  || path.join(CERTS_DIR, 'key.pem');
+const TLS_MODE  = (process.env.TLS_MODE || 'auto').toLowerCase();
+
+let tlsActive = false;
+let server;
+
+if (TLS_MODE === 'off') {
+  // Explicitly HTTP-only
+  server = http.createServer(app);
+  console.log('[TLS] HTTPS disabled (TLS_MODE=off)');
+} else if (fs.existsSync(CERT_PATH) && fs.existsSync(KEY_PATH)) {
+  // Use existing certificates
+  const tlsOptions = {
+    key: fs.readFileSync(KEY_PATH),
+    cert: fs.readFileSync(CERT_PATH),
+  };
+  server = https.createServer(tlsOptions, app);
+  tlsActive = true;
+  console.log('[TLS] HTTPS enabled (existing certificates)');
+} else {
+  // Auto-generate self-signed certificate at startup
+  try {
+    const os = require('os');
+
+    // Determine CN: use env var or first LAN IPv4
+    let cn = process.env.TLS_CN || 'localhost';
+    if (!process.env.TLS_CN) {
+      const ifaces = os.networkInterfaces();
+      for (const [name, list] of Object.entries(ifaces)) {
+        for (const iface of list) {
+          if (iface.family === 'IPv4' && !iface.internal) {
+            cn = iface.address;
+            break;
+          }
+        }
+        if (cn !== 'localhost') break;
+      }
+    }
+
+    // Ensure certs directory exists
+    if (!fs.existsSync(CERTS_DIR)) {
+      fs.mkdirSync(CERTS_DIR, { recursive: true });
+    }
+
+    // Generate self-signed cert with SAN using openssl
+    execSync(
+      `openssl req -x509 -newkey rsa:2048 -nodes -days 3650 ` +
+      `-subj "/CN=${cn}" ` +
+      `-addext "subjectAltName=DNS:${cn},IP:${cn},DNS:localhost,IP:127.0.0.1" ` +
+      `-out "${CERT_PATH}" -keyout "${KEY_PATH}"`,
+      { timeout: 15000 }
+    );
+
+    const tlsOptions = {
+      key: fs.readFileSync(KEY_PATH),
+      cert: fs.readFileSync(CERT_PATH),
+    };
+    server = https.createServer(tlsOptions, app);
+    tlsActive = true;
+    console.log(`[TLS] HTTPS enabled (self-signed cert generated for ${cn})`);
+
+  } catch (err) {
+    console.error('[TLS] Could not generate certificate:', err.message);
+    server = http.createServer(app);
+    console.log('[TLS] Running in HTTP mode');
+  }
+}
+
 const wss = new WebSocket.Server({ server });
 
 // --- Middleware ---
@@ -429,14 +506,15 @@ async function startServer() {
     // Initialize Telegram bot
     telegram.initTelegram();
 
-    // Start HTTP server
+    // Start server (HTTP or HTTPS)
+    const protocol = tlsActive ? 'https' : 'http';
     server.listen(PORT, '0.0.0.0', () => {
       console.log(`\n========================================`);
       console.log(` Household Replacement Tracker Server`);
       console.log(`========================================`);
       console.log(` BUILD TIMESTAMP: ${BUILD_TIMESTAMP}`);
       console.log(` Server started at: ${new Date().toISOString()}`);
-      console.log(` Listening on port ${PORT}`);
+      console.log(` Listening on port ${PORT} (${protocol.toUpperCase()})`);
       console.log(`========================================\n`);
       
       // Get network interfaces for local network access
@@ -446,7 +524,7 @@ async function startServer() {
       for (const [name, interfaces] of Object.entries(networks)) {
         for (const iface of interfaces) {
           if (iface.family === 'IPv4' && !iface.internal) {
-            console.log(`Network: http://${iface.address}:${PORT}`);
+            console.log(`Network: ${protocol}://${iface.address}:${PORT}`);
           }
         }
       }

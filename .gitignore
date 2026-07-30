@@ -2,3 +2,6 @@ node_modules/
 data/hrt.db
 data/*.db-wal
 data/*.db-shm
+
+# TLS Certificates (private key - NEVER commit)
+certs/key.pem

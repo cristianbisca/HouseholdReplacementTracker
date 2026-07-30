@@ -10,6 +10,9 @@ FROM node:18-alpine
 
 WORKDIR /app
 
+# Install openssl for self-signed certificate generation
+RUN apk add --no-cache openssl
+
 # Create non-root user
 RUN addgroup -S appgroup && adduser -S appuser -G appgroup
 
@@ -21,8 +24,8 @@ COPY package*.json ./
 COPY server/ ./server/
 COPY public/ ./public/
 
-# Create data directory and set permissions
-RUN mkdir -p /app/data && chown -R appuser:appgroup /app
+# Create data and certs directories and set permissions
+RUN mkdir -p /app/data /app/certs && chown -R appuser:appgroup /app
 
 USER appuser
 
@@ -32,6 +35,6 @@ ENV NODE_ENV=production
 ENV PORT=3000
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD node -e "require('http').get('http://localhost:3000/api/health', (r) => { process.exit(r.statusCode === 200 ? 0 : 1) })"
+  CMD node -e "const http=require('http'); const https=require('https'); const fs=require('fs'); const useHttps=fs.existsSync('/app/certs/cert.pem') && fs.existsSync('/app/certs/key.pem'); const client=useHttps?https:http; client.get({hostname:'localhost',port:3000,path:'/api/health',rejectUnauthorized:false}, (r) => { process.exit(r.statusCode === 200 ? 0 : 1) }).on('error', () => process.exit(1))"
 
 CMD ["node", "server/index.js"]
