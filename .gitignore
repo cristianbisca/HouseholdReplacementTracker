@@ -5,3 +5,4 @@ data/*.db-shm
 
 # TLS Certificates (private key - NEVER commit)
 certs/key.pem
+certs/cert.pem
