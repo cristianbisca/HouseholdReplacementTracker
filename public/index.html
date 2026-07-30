@@ -70,14 +70,38 @@
   <main class="main-content" id="mainContent">
     <!-- Items List View -->
     <div class="view items-view active" id="itemsView">
-      <div class="items-grid" id="itemsGrid">
-        <!-- Item cards will be rendered here -->
+      <!-- View Toggle -->
+      <div class="view-toggle" id="viewToggle">
+        <button class="view-toggle-btn active" data-view="list" title="List View">☰</button>
+        <button class="view-toggle-btn" data-view="calendar" title="Calendar View">📅</button>
       </div>
-      <div class="empty-state" id="emptyState" style="display: none;">
-        <div class="empty-icon">📋</div>
-        <h2>No items tracked yet</h2>
-        <p>Add your first item to start tracking replacements</p>
-        <button class="btn btn-primary" onclick="openModal('itemModal')">Add First Item</button>
+      
+      <!-- List Container -->
+      <div class="list-container" id="listContainer">
+        <div class="items-grid" id="itemsGrid">
+          <!-- Item cards will be rendered here -->
+        </div>
+        <div class="empty-state" id="emptyState" style="display: none;">
+          <div class="empty-icon">📋</div>
+          <h2>No items tracked yet</h2>
+          <p>Add your first item to start tracking replacements</p>
+          <button class="btn btn-primary" onclick="openModal('itemModal')">Add First Item</button>
+        </div>
+      </div>
+      
+      <!-- Calendar Container -->
+      <div class="calendar-container" id="calendarContainer" style="display: none;">
+        <div class="calendar-header">
+          <button class="calendar-nav-btn" id="prevMonthBtn">◀</button>
+          <h2 class="calendar-title" id="calendarTitle"></h2>
+          <button class="calendar-nav-btn" id="nextMonthBtn">▶</button>
+        </div>
+        <div class="calendar-weekdays" id="calendarWeekdays">
+          <div>Su</div><div>Mo</div><div>Tu</div><div>We</div><div>Th</div><div>Fr</div><div>Sa</div>
+        </div>
+        <div class="calendar-grid" id="calendarGrid">
+          <!-- Calendar days will be rendered here -->
+        </div>
       </div>
     </div>
 

@@ -12,7 +12,7 @@
     filteredItems: [],
     currentFilter: 'all',
     searchQuery: '',
-    currentView: 'list',
+    displayView: 'list', // 'list' or 'calendar'
     selectedItem: null,
     ws: null,
     wsConnected: false,
@@ -21,7 +21,10 @@
     settings: {},
     telegramStatus: null,
     authToken: localStorage.getItem('hrt_auth_token') || '',
-    authenticated: false
+    authenticated: false,
+    // Calendar state
+    calendarYear: new Date().getFullYear(),
+    calendarMonth: new Date().getMonth() // 0-indexed
   };
 
   // --- Authentication Functions ---
@@ -176,6 +179,15 @@
     dom.historyList = document.getElementById('historyList');
     dom.editItemBtn = document.getElementById('editItemBtn');
     dom.deleteItemBtn = document.getElementById('deleteItemBtn');
+
+    // View toggle & calendar elements
+    dom.viewToggle = document.getElementById('viewToggle');
+    dom.listContainer = document.getElementById('listContainer');
+    dom.calendarContainer = document.getElementById('calendarContainer');
+    dom.calendarTitle = document.getElementById('calendarTitle');
+    dom.calendarGrid = document.getElementById('calendarGrid');
+    dom.prevMonthBtn = document.getElementById('prevMonthBtn');
+    dom.nextMonthBtn = document.getElementById('nextMonthBtn');
   }
 
   // --- API Helper Functions ---
@@ -465,12 +477,14 @@
         state.items = message.payload.items || [];
         applyFilter();
         renderItems();
+        if (state.displayView === 'calendar') renderCalendar();
         break;
 
       case 'item_created':
         state.items.push(message.payload.item);
         applyFilter();
         renderItems();
+        if (state.displayView === 'calendar') renderCalendar();
         showToast('Item added', 'success');
         break;
 
@@ -478,6 +492,7 @@
         updateItemInState(message.payload.item);
         applyFilter();
         renderItems();
+        if (state.displayView === 'calendar') renderCalendar();
         if (state.selectedItem && state.selectedItem.id === message.payload.item.id) {
           showDetailView(message.payload.item.id);
         }
@@ -487,6 +502,7 @@
         state.items = state.items.filter(i => i.id !== message.payload.id);
         applyFilter();
         renderItems();
+        if (state.displayView === 'calendar') renderCalendar();
         if (state.selectedItem && state.selectedItem.id === message.payload.id) {
           showListView();
         }
@@ -497,6 +513,7 @@
         updateItemInState(message.payload.item);
         applyFilter();
         renderItems();
+        if (state.displayView === 'calendar') renderCalendar();
         if (state.selectedItem && state.selectedItem.id === message.payload.item.id) {
           showDetailView(message.payload.item.id);
         }
@@ -507,6 +524,7 @@
         updateItemInState(message.payload.item);
         applyFilter();
         renderItems();
+        if (state.displayView === 'calendar') renderCalendar();
         if (state.selectedItem && state.selectedItem.id === message.payload.item.id) {
           showDetailView(message.payload.item.id);
         }
@@ -1045,11 +1063,16 @@
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') {
         document.querySelectorAll('.modal-overlay.active').forEach(m => m.classList.remove('active'));
+        closeDayPopup();
       }
       if (e.key === 'n' && !e.target.closest('input, textarea, select')) {
         openItemModal();
       }
     });
+
+    // Setup view toggle & calendar navigation
+    setupViewToggle();
+    setupCalendarNavigation();
   }
 
   async function handleItemSubmit(e) {
@@ -1160,6 +1183,275 @@
     }
   }
 
+  // --- View Toggle & Calendar Functions ---
+  function setupViewToggle() {
+    if (!dom.viewToggle) return;
+    
+    dom.viewToggle.addEventListener('click', (e) => {
+      const btn = e.target.closest('.view-toggle-btn');
+      if (!btn) return;
+      
+      const view = btn.dataset.view;
+      switchDisplayView(view);
+    });
+  }
+
+  function switchDisplayView(view) {
+    state.displayView = view;
+    
+    // Update toggle buttons
+    dom.viewToggle.querySelectorAll('.view-toggle-btn').forEach(b => {
+      b.classList.toggle('active', b.dataset.view === view);
+    });
+    
+    // Show/hide containers
+    dom.listContainer.style.display = view === 'list' ? 'block' : 'none';
+    dom.calendarContainer.style.display = view === 'calendar' ? 'block' : 'none';
+    
+    if (view === 'calendar') {
+      renderCalendar();
+    }
+  }
+
+  function setupCalendarNavigation() {
+    dom.prevMonthBtn.addEventListener('click', () => {
+      state.calendarMonth--;
+      if (state.calendarMonth < 0) {
+        state.calendarMonth = 11;
+        state.calendarYear--;
+      }
+      renderCalendar();
+    });
+
+    dom.nextMonthBtn.addEventListener('click', () => {
+      state.calendarMonth++;
+      if (state.calendarMonth > 11) {
+        state.calendarMonth = 0;
+        state.calendarYear++;
+      }
+      renderCalendar();
+    });
+  }
+
+  function renderCalendar() {
+    const year = state.calendarYear;
+    const month = state.calendarMonth;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    // Month title
+    const monthNames = ['January', 'February', 'March', 'April', 'May', 'June',
+      'July', 'August', 'September', 'October', 'November', 'December'];
+    dom.calendarTitle.textContent = `${monthNames[month]} ${year}`;
+
+    // Calculate days in the calendar grid
+    const firstDay = new Date(year, month, 1);
+    const lastDay = new Date(year, month + 1, 0);
+    const startWeekday = firstDay.getDay(); // 0=Sun
+    const daysInMonth = lastDay.getDate();
+
+    // Previous month padding
+    const prevMonthLastDay = new Date(year, month, 0).getDate();
+
+    // Group items by their next_due_date for this calendar
+    const eventsByDate = {};
+    for (const item of state.items) {
+      if (!item.next_due_date) continue;
+      
+      const dueDate = new Date(item.next_due_date + 'T00:00:00');
+      const key = `${dueDate.getFullYear()}-${String(dueDate.getMonth() + 1).padStart(2, '0')}-${String(dueDate.getDate()).padStart(2, '0')}`;
+      
+      if (!eventsByDate[key]) {
+        eventsByDate[key] = [];
+      }
+      eventsByDate[key].push(item);
+    }
+
+    // Build calendar days
+    const days = [];
+    
+    // Previous month padding days
+    for (let i = startWeekday - 1; i >= 0; i--) {
+      const day = prevMonthLastDay - i;
+      const d = new Date(year, month - 1, day);
+      const key = dateKey(d);
+      days.push({ day, date: d, isCurrentMonth: false, events: eventsByDate[key] || [] });
+    }
+
+    // Current month days
+    for (let day = 1; day <= daysInMonth; day++) {
+      const d = new Date(year, month, day);
+      const key = dateKey(d);
+      days.push({ day, date: d, isCurrentMonth: true, events: eventsByDate[key] || [] });
+    }
+
+    // Next month padding to fill 6 rows (42 cells) or 5 rows (35 cells)
+    const totalCellsSoFar = days.length;
+    const totalCells = totalCellsSoFar >= 40 ? 42 : 35;
+    const remainingDays = totalCells - totalCellsSoFar;
+    for (let day = 1; day <= remainingDays; day++) {
+      const d = new Date(year, month + 1, day);
+      const key = dateKey(d);
+      days.push({ day, date: d, isCurrentMonth: false, events: eventsByDate[key] || [] });
+    }
+
+    // Render calendar grid
+    dom.calendarGrid.innerHTML = days.map(({ day, date, isCurrentMonth, events }) => {
+      const isToday = date.getTime() === today.getTime();
+      const classes = ['calendar-day'];
+      if (!isCurrentMonth) classes.push('other-month');
+      if (isToday) classes.push('today');
+
+      // Build event elements (max 3 shown + "more" indicator)
+      let eventsHtml = '';
+      const maxShow = 3;
+      const eventsToRender = events.slice(0, maxShow);
+      
+      for (const item of eventsToRender) {
+        const statusClass = getCalendarEventStatusClass(item);
+        const shortName = shortenItemNameForCalendar(item.name);
+        eventsHtml += `<div class="calendar-event ${statusClass}" onclick="event.stopPropagation(); showDetailView('${item.id}')" title="${escapeHtml(item.name)}">${shortName}</div>`;
+      }
+      
+      if (events.length > maxShow) {
+        eventsHtml += `<div class="calendar-more" onclick="event.stopPropagation(); openDayPopup(${year}, ${date.getMonth()}, ${date.getDate()})">+${events.length - maxShow} more</div>`;
+      }
+
+      return `
+        <div class="${classes.join(' ')}" onclick="openDayPopup(${year}, ${date.getMonth()}, ${date.getDate()})">
+          <div class="calendar-day-header">${day}</div>
+          <div class="calendar-events">${eventsHtml}</div>
+        </div>
+      `;
+    }).join('');
+  }
+
+  function dateKey(date) {
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+  }
+
+  function getCalendarEventStatusClass(item) {
+    if (item.usage_enabled && item.usage_interval_value) {
+      return 'usage-based';
+    }
+    
+    const days = item.days_until_due;
+    if (days === null || days === undefined) return 'ok';
+    if (days < 0) return 'overdue';
+    if (days === 0) return 'due-today';
+    if (days <= 7) return 'due-soon';
+    return 'ok';
+  }
+
+  function shortenItemNameForCalendar(name) {
+    // Remove common words and abbreviate for calendar display
+    let short = name;
+    
+    // Common abbreviations
+    const abbrevs = [
+      ['Water Filter', 'Wtr Flt'],
+      ['Air Filter', 'Air Flt'],
+      ['Oil Change', 'Oil Chg'],
+      ['Engine Oil', 'Eng Oil'],
+      ['Cabin Air', 'Cabin Air'],
+      ['Heating, Ventilation', 'HVAC'],
+      ['Refrigerator', 'Fridge'],
+      ['Washing Machine', 'Washer'],
+      ['Dishwasher', 'DW'],
+      ['Smoke Detector', 'Smoke Det'],
+      ['Carbon Monoxide', 'CO'],
+      ['Battery', 'Batt'],
+      ['Replacement', 'Repl'],
+    ];
+    
+    for (const [full, shortForm] of abbrevs) {
+      short = short.replace(new RegExp(full, 'gi'), shortForm);
+    }
+    
+    // Truncate to 15 chars max with ellipsis
+    if (short.length > 15) {
+      short = short.substring(0, 14) + '…';
+    }
+    
+    return escapeHtml(short);
+  }
+
+  function openDayPopup(year, month, day) {
+    const date = new Date(year, month, day);
+    const key = dateKey(date);
+    
+    // Find events for this day
+    const events = [];
+    for (const item of state.items) {
+      if (!item.next_due_date) continue;
+      
+      const dueDate = new Date(item.next_due_date + 'T00:00:00');
+      const itemKey = dateKey(dueDate);
+      
+      if (itemKey === key) {
+        events.push({ item, statusClass: getCalendarEventStatusClass(item) });
+      }
+    }
+
+    // Format the date for display
+    const monthNames = ['January', 'February', 'March', 'April', 'May', 'June',
+      'July', 'August', 'September', 'October', 'November', 'December'];
+    const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    const title = `${dayNames[date.getDay()]}, ${monthNames[month]} ${day}`;
+
+    // Create popup dynamically if it doesn't exist
+    let popupOverlay = document.getElementById('calendarDayPopupOverlay');
+    if (!popupOverlay) {
+      popupOverlay = document.createElement('div');
+      popupOverlay.id = 'calendarDayPopupOverlay';
+      popupOverlay.className = 'calendar-day-popup-overlay';
+      popupOverlay.innerHTML = `
+        <div class="calendar-day-popup">
+          <div class="calendar-day-popup-header">
+            <h3 id="calendarPopupTitle"></h3>
+            <button class="calendar-day-popup-close" onclick="closeDayPopup()">&times;</button>
+          </div>
+          <div class="calendar-day-popup-body" id="calendarPopupBody"></div>
+        </div>
+      `;
+      document.body.appendChild(popupOverlay);
+      
+      // Close on overlay click
+      popupOverlay.addEventListener('click', (e) => {
+        if (e.target === popupOverlay) closeDayPopup();
+      });
+    }
+
+    const popupTitle = document.getElementById('calendarPopupTitle');
+    const popupBody = document.getElementById('calendarPopupBody');
+    
+    popupTitle.textContent = title;
+    
+    if (events.length === 0) {
+      popupBody.innerHTML = '<div class="calendar-day-popup-empty">No items due on this day</div>';
+    } else {
+      popupBody.innerHTML = events.map(({ item, statusClass }) => {
+        const statusText = getItemStatus(item).text;
+        return `
+          <div class="calendar-popup-event" onclick="closeDayPopup(); showDetailView('${item.id}');">
+            <div class="calendar-popup-event-dot ${statusClass}"></div>
+            <div class="calendar-popup-event-info">
+              <div class="calendar-popup-event-name">${escapeHtml(item.name)}</div>
+              <div class="calendar-popup-event-detail">${statusText}${item.category ? ' · ' + escapeHtml(item.category) : ''}</div>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    popupOverlay.classList.add('active');
+  }
+
+  window.closeDayPopup = function() {
+    const popupOverlay = document.getElementById('calendarDayPopupOverlay');
+    if (popupOverlay) popupOverlay.classList.remove('active');
+  };
+
   // --- Toast Notifications ---
   function showToast(message, type = 'info') {
     const toast = document.createElement('div');
@@ -1248,5 +1540,6 @@
   window.showDetailView = showDetailView;
   window.openReplacementModal = openReplacementModal;
   window.openUsageModal = openUsageModal;
+  window.openDayPopup = openDayPopup;
 
 })();
