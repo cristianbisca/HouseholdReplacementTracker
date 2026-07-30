@@ -15,6 +15,17 @@ services:
       - hrt-certs:/app/certs
     restart: unless-stopped
 
+  # Helper service for Let's Encrypt DNS-01 certificate management.
+  # Run one-time commands via Portainer or docker compose run.
+  # See README.md for instructions.
+  acme:
+    image: neilpang/acme.sh
+    container_name: hrt-acme
+    volumes:
+      - hrt-certs:/acme.sh/certs
+    entrypoint: ["acme.sh"]
+    profiles: ["tools"]
+
 volumes:
   hrt-data:
     external: true
