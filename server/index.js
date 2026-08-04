@@ -541,10 +541,11 @@ async function startServer() {
     const tz = process.env.NOTIFICATION_TIMEZONE || 'Europe/Bucharest';
 
     // Daily Telegram notification at 8:00 AM in local timezone
-    cron.schedule('0 8 * * *', { timezone: tz }, () => {
+    // node-cron v4.x: schedule(pattern, callback, options)
+    cron.schedule('0 8 * * *', () => {
       console.log(`[Cron] Running daily Telegram notification check (${tz})...`);
       telegram.sendDailyNotification();
-    });
+    }, { timezone: tz });
     console.log(`[Cron] Daily notification scheduler started (runs at 8:00 AM ${tz})`);
 
   } catch (error) {
