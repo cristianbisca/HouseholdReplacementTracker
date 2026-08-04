@@ -537,12 +537,15 @@ async function startServer() {
       db.saveDatabase();
     }, 30000);
 
-    // Daily Telegram notification at 8:00 AM
-    cron.schedule('0 8 * * *', () => {
-      console.log('[Cron] Running daily Telegram notification check...');
+    // Determine timezone: use env var or default to Europe/Bucharest
+    const tz = process.env.NOTIFICATION_TIMEZONE || 'Europe/Bucharest';
+
+    // Daily Telegram notification at 8:00 AM in local timezone
+    cron.schedule('0 8 * * *', { timezone: tz }, () => {
+      console.log(`[Cron] Running daily Telegram notification check (${tz})...`);
       telegram.sendDailyNotification();
     });
-    console.log('[Cron] Daily notification scheduler started (runs at 8:00 AM)');
+    console.log(`[Cron] Daily notification scheduler started (runs at 8:00 AM ${tz})`);
 
   } catch (error) {
     console.error('Failed to start server:', error);

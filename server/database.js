@@ -344,11 +344,22 @@ function calculateNextDueDate(lastReplacedDate, intervalValue, intervalType) {
 function calculateDaysUntilDue(nextDueDate) {
   if (!nextDueDate) return null;
 
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const due = new Date(nextDueDate + 'T00:00:00');
+  // Use Europe/Bucharest timezone (or env override) for "today" calculation
+  const tz = process.env.NOTIFICATION_TIMEZONE || 'Europe/Bucharest';
 
-  const diffMs = due - today;
+  // Get current date components in the target timezone
+  const now = new Date();
+  const tzDateStr = now.toLocaleDateString('en-CA', { timeZone: tz }); // produces YYYY-MM-DD
+  const [todayYear, todayMonth, todayDay] = tzDateStr.split('-').map(Number);
+
+  // Today at midnight UTC (derived from target timezone date)
+  const todayMidnight = Date.UTC(todayYear, todayMonth - 1, todayDay);
+
+  // Due date at midnight UTC
+  const [dueYear, dueMonth, dueDay] = nextDueDate.split('-').map(Number);
+  const dueMidnight = Date.UTC(dueYear, dueMonth - 1, dueDay);
+
+  const diffMs = dueMidnight - todayMidnight;
   return Math.ceil(diffMs / (1000 * 60 * 60 * 24));
 }
 
