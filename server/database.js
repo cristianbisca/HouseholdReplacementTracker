@@ -368,6 +368,11 @@ function calculateUsagePercentage(currentCount, intervalValue) {
   return Math.min(100, (currentCount / intervalValue) * 100);
 }
 
+// --- Utility ---
+function getDatabase() {
+  return db;
+}
+
 // --- Record Replacement Logic ---
 function recordReplacement(itemId, replacedBy) {
   const item = getItemById(itemId);
