@@ -466,10 +466,25 @@ async function downloadBackupFromDropbox(dropboxPath, localPath) {
 
   try {
     console.log(`[Restore] Downloading ${dropboxPath} from Dropbox...`);
-    const result = await _dbx.filesDownload({ path: dropboxPath });
+    const rawResult = await _dbx.filesDownload({ path: dropboxPath });
     
-    // result.file_result is a Readable stream, we need to collect all chunks
-    const fileStream = result.file_result;
+    // Debug: log response structure
+    console.log(`[Restore] filesDownload response keys:`, Object.keys(rawResult));
+    if (rawResult.result) {
+      console.log(`[Restore] rawResult.result keys:`, Object.keys(rawResult.result));
+    }
+    
+    // The dropbox npm package may wrap the response in .result
+    const result = rawResult.result || rawResult;
+    console.log(`[Restore] resolved result keys:`, Object.keys(result));
+    
+    // file_result or file is a Readable stream; collect all chunks into a buffer
+    let fileStream = result.file_result || result.file;
+    
+    if (!fileStream) {
+      throw new Error('Dropbox filesDownload returned no file stream (file_result and file both missing)');
+    }
+
     const chunks = [];
     
     for await (const chunk of fileStream) {
