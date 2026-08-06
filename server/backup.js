@@ -375,11 +375,23 @@ async function findNewestDropboxBackup() {
   try {
     console.log(`[Restore] Listing backups in ${DROPBOX_FOLDER}...`);
     const listResult = await _dbx.filesListFolder({ path: DROPBOX_FOLDER });
+    
+    console.log(`[Restore] Dropbox filesListFolder response keys:`, Object.keys(listResult));
+    console.log(`[Restore] listResult.entries type:`, typeof listResult.entries, Array.isArray(listResult.entries) ? 'array' : 'not array');
+    if (listResult.result) {
+      console.log(`[Restore] listResult.result keys:`, Object.keys(listResult.result));
+    }
+
+    // The dropbox npm package may wrap the response in a .result property
+    const result = listResult.result || listResult;
+    const entries = Array.isArray(result.entries) ? result.entries : [];
+    
+    console.log(`[Restore] Entries count: ${entries.length}`);
 
     let newestBackup = null;
     let newestDate = new Date(0);
 
-    for (const file of listResult.entries) {
+    for (const file of entries) {
       if (file ['.tag'] !== 'file') continue;
       if (!file.name.startsWith('hrt_backup_') || !file.name.endsWith('.sqlite')) continue;
 
@@ -398,12 +410,18 @@ async function findNewestDropboxBackup() {
     }
 
     // Handle pagination
-    while (listResult.has_more) {
+    let hasMore = result.has_more || listResult.has_more;
+    while (hasMore) {
       const cursorResult = await _dbx.filesListFolderContinue({ 
-        cursor: listResult.cursor 
+        cursor: result.cursor || listResult.cursor 
       });
 
-      for (const file of cursorResult.entries) {
+      const pageResult = cursorResult.result || cursorResult;
+      const pageEntries = Array.isArray(pageResult.entries) ? pageResult.entries : [];
+      
+      console.log(`[Restore] Pagination: ${pageEntries.length} more entries`);
+
+      for (const file of pageEntries) {
         if (file ['.tag'] !== 'file') continue;
         if (!file.name.startsWith('hrt_backup_') || !file.name.endsWith('.sqlite')) continue;
 
@@ -421,7 +439,7 @@ async function findNewestDropboxBackup() {
         }
       }
 
-      listResult = cursorResult;
+      hasMore = pageResult.has_more || cursorResult.has_more;
     }
 
     if (!newestBackup) {
