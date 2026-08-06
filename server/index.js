@@ -536,32 +536,61 @@ async function startServer() {
     auth.initAuth();
 
     // Restore from latest backup if enabled (MUST happen before database init)
-    const RESTORE_LATEST_BACKUP = process.env.RESTORE_LATEST_BACKUP === 'true';
+    const rawRestoreEnv = process.env.RESTORE_LATEST_BACKUP;
+    console.log('[Startup] === RESTORE DIAGNOSTICS ===');
+    console.log(`[Startup] Raw RESTORE_LATEST_BACKUP env value: "${rawRestoreEnv}"`);
+    console.log(`[Startup] Comparison result (=== 'true'): ${rawRestoreEnv === 'true'}`);
+    console.log(`[Startup] All env vars with BACKUP/RESTORE prefix:`);
+    for (const [key, val] of Object.entries(process.env)) {
+      if (key.includes('BACKUP') || key.includes('RESTORE')) {
+        const masked = key.includes('TOKEN') ? `${val.substring(0, 8)}...${val.substring(val.length - 4)}` : val;
+        console.log(`[Startup]   ${key} = "${masked}"`);
+      }
+    }
+
+    const RESTORE_LATEST_BACKUP = rawRestoreEnv === 'true';
+    console.log(`[Startup] RESTORE_LATEST_BACKUP resolved to: ${RESTORE_LATEST_BACKUP}`);
+    console.log('[Startup] ==============================');
+
     let restoreResult = null;
     let safetyBackupPath = null;
 
     if (RESTORE_LATEST_BACKUP) {
+      console.log('[Startup] ENTERING restore block...');
       try {
+        console.log('[Startup] Calling backup.restoreLatestBackup()...');
         restoreResult = await backup.restoreLatestBackup();
+        console.log(`[Startup] restoreLatestBackup returned:`, JSON.stringify(restoreResult));
+
         // Track the safety backup path for potential rollback
         if (restoreResult) {
           const DB_PATH = path.join(__dirname, '..', 'data', 'hrt.db');
           const backupDir = path.join(__dirname, '..', 'data', 'backups');
+          console.log(`[Startup] Looking for safety backup in: ${backupDir}`);
           // Find the most recent pre-restore safety backup
           if (fs.existsSync(backupDir)) {
             const safetyFiles = fs.readdirSync(backupDir)
               .filter(f => f.startsWith('hrt_pre_restore_') && f.endsWith('.sqlite'))
               .sort()
               .reverse();
+            console.log(`[Startup] Safety backup files found: ${JSON.stringify(safetyFiles)}`);
             if (safetyFiles.length > 0) {
               safetyBackupPath = path.join(backupDir, safetyFiles[0]);
+              console.log(`[Startup] Safety backup tracked at: ${safetyBackupPath}`);
             }
+          } else {
+            console.log(`[Startup] Backup directory does not exist yet`);
           }
+        } else {
+          console.log('[Startup] restoreResult was null/undefined, skipping safety backup tracking');
         }
       } catch (error) {
         console.error('[Startup] FATAL: Database restore failed:', error.message);
+        console.error('[Startup] Full error stack:', error.stack);
         process.exit(1);
       }
+    } else {
+      console.log('[Startup] RESTORE_LATEST_BACKUP is NOT enabled, skipping restore');
     }
 
     // Initialize database (after potential restore so it loads restored data)
