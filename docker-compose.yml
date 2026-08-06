@@ -16,6 +16,7 @@ services:
       - BACKUP_DROPBOX_FOLDER=${BACKUP_DROPBOX_FOLDER:-/Backup}
       - BACKUP_RETENTION_DAYS=${BACKUP_RETENTION_DAYS:-30}
       - BACKUP_SCHEDULE=${BACKUP_SCHEDULE:-0 2 * * *}
+      - RESTORE_LATEST_BACKUP=${RESTORE_LATEST_BACKUP:-false}
     volumes:
       - hrt-data:/app/data
       - hrt-certs:/app/certs
