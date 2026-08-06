@@ -468,30 +468,12 @@ async function downloadBackupFromDropbox(dropboxPath, localPath) {
     console.log(`[Restore] Downloading ${dropboxPath} from Dropbox...`);
     const rawResult = await _dbx.filesDownload({ path: dropboxPath });
     
-    // Debug: log response structure
-    console.log(`[Restore] filesDownload response keys:`, Object.keys(rawResult));
-    if (rawResult.result) {
-      console.log(`[Restore] rawResult.result keys:`, Object.keys(rawResult.result));
+    // In Node.js the dropbox SDK returns response.result.fileBinary as a Buffer
+    const buffer = rawResult.result?.fileBinary || rawResult.fileBinary;
+    
+    if (!buffer) {
+      throw new Error('Dropbox filesDownload returned no file data');
     }
-    
-    // The dropbox npm package may wrap the response in .result
-    const result = rawResult.result || rawResult;
-    console.log(`[Restore] resolved result keys:`, Object.keys(result));
-    
-    // file_result or file is a Readable stream; collect all chunks into a buffer
-    let fileStream = result.file_result || result.file;
-    
-    if (!fileStream) {
-      throw new Error('Dropbox filesDownload returned no file stream (file_result and file both missing)');
-    }
-
-    const chunks = [];
-    
-    for await (const chunk of fileStream) {
-      chunks.push(chunk);
-    }
-    
-    const buffer = Buffer.concat(chunks);
     
     // Ensure the directory exists
     const dir = path.dirname(localPath);
