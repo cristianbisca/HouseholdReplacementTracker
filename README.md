@@ -611,6 +611,90 @@ The application uses SQLite with three main tables:
 | `PORT` | `3000` | HTTP server port |
 | `ADMIN_USER` | `admin` | Admin username for login |
 | `ADMIN_PASS` | `admin` | Admin password (hashed with bcrypt) |
+| `TLS_MODE` | `auto` | TLS mode: `auto` (use or generate certs), `off` (HTTP only) |
+| `TLS_CERT` | `/app/certs/cert.pem` | Path to TLS certificate file |
+| `TLS_KEY` | `/app/certs/key.pem` | Path to TLS private key file |
+| `TLS_CN` | Auto-detected LAN IP | Common Name for self-signed certificate CN and SAN |
+
+### HTTP-Only Mode (Reverse Proxy)
+
+To run the app in HTTP-only mode (e.g., when handling SSL termination at a reverse proxy like Nginx, Caddy, or Traefik):
+
+```bash
+# Docker
+docker run -d \
+  --name hrt \
+  -p 3000:3000 \
+  -v ./data:/app/data \
+  -e PORT=3000 \
+  -e TLS_MODE=off \
+  -e ADMIN_USER=myadmin \
+  -e ADMIN_PASS=securepass \
+  --restart unless-stopped \
+  household-replacement-tracker:latest
+```
+
+```yaml
+# docker-compose.yml
+services:
+  household-replacement-tracker:
+    build: .
+    container_name: household-replacement-tracker
+    network_mode: host
+    environment:
+      - ADMIN_USER=${ADMIN_USER:-admin}
+      - ADMIN_PASS=${ADMIN_PASS:-admin}
+      - PORT=3000
+      - TLS_MODE=off
+    volumes:
+      - hrt-data:/app/data
+    restart: unless-stopped
+```
+
+When `TLS_MODE=off`, the server listens on plain HTTP only. Configure your reverse proxy to terminate SSL and forward traffic to the app.
+
+#### Example: Caddy Reverse Proxy
+
+```
+your-domain.com {
+  reverse_proxy localhost:3000
+}
+```
+
+#### Example: Nginx Reverse Proxy
+
+```nginx
+server {
+    listen 443 ssl;
+    server_name your-domain.com;
+
+    ssl_certificate /path/to/cert.pem;
+    ssl_certificate_key /path/to/key.pem;
+
+    location / {
+        proxy_pass http://localhost:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+}
+```
+
+#### Example: Traefik Labels (Docker)
+
+```yaml
+services:
+  household-replacement-tracker:
+    build: .
+    environment:
+      - TLS_MODE=off
+    labels:
+      - "traefik.http.routers.hrt.rule=Host(`your-domain.com`)"
+      - "traefik.http.routers.hrt.tls=true"
+      - "traefik.http.services.hrt.loadbalancer.server.port=3000"
+```
 
 ### Database Location
 

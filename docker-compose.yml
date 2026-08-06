@@ -9,7 +9,7 @@ services:
       - ADMIN_USER=${ADMIN_USER:-admin}
       - ADMIN_PASS=${ADMIN_PASS:-admin}
       - PORT=3000
-      - TLS_MODE=auto
+      - TLS_MODE=off
     volumes:
       - hrt-data:/app/data
       - hrt-certs:/app/certs
