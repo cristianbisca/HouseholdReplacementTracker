@@ -19,27 +19,48 @@ let _dbx = null;
  * The dropbox npm package supports oauth2 with refresh tokens.
  */
 async function initDropbox() {
-  if (!BACKUP_ENABLED || !DROPBOX_REFRESH_TOKEN) {
-    console.log('[Backup] Backup disabled or no refresh token configured.');
+  // Log all config values for debugging (mask token for security)
+  const tokenPreview = DROPBOX_REFRESH_TOKEN ? 
+    `${DROPBOX_REFRESH_TOKEN.substring(0, 8)}...${DROPBOX_REFRESH_TOKEN.substring(DROPBOX_REFRESH_TOKEN.length - 8)}` : 
+    '(empty)';
+  
+  console.log('[Backup] === BACKUP CONFIGURATION ===');
+  console.log(`[Backup] BACKUP_ENABLED: ${BACKUP_ENABLED} (raw env: "${process.env.BACKUP_ENABLED}")`);
+  console.log(`[Backup] BACKUP_DROPBOX_REFRESH_TOKEN: ${tokenPreview} (length: ${DROPBOX_REFRESH_TOKEN?.length || 0})`);
+  console.log(`[Backup] BACKUP_DROPBOX_FOLDER: ${DROPBOX_FOLDER}`);
+  console.log(`[Backup] BACKUP_RETENTION_DAYS: ${RETENTION_DAYS}`);
+  console.log(`[Backup] BACKUP_SCHEDULE: ${BACKUP_SCHEDULE}`);
+  console.log('[Backup] ==============================');
+
+  if (!BACKUP_ENABLED) {
+    console.log('[Backup] Backup is DISABLED. Set BACKUP_ENABLED=true to enable.');
+    return false;
+  }
+
+  if (!DROPBOX_REFRESH_TOKEN) {
+    console.log('[Backup] No Dropbox refresh token configured. Set BACKUP_DROPBOX_REFRESH_TOKEN environment variable.');
     return false;
   }
 
   try {
-    // Create Dropbox client with app key/secret and access type
-    // For a refreshed long-lived token, we use it directly as the access token.
-    // Dropbox now issues long-lived access tokens that don't expire.
-    // The "refresh token" from the console is actually a long-lived access token prefixed with "sl.".
-    
     _dbx = new Dropbox({
       accessToken: DROPBOX_REFRESH_TOKEN,
     });
 
+    console.log('[Backup] Dropbox client created, verifying token...');
+
     // Verify the token works by calling users/get_current_account
     const result = await _dbx.usersGetCurrentAccount({});
     console.log(`[Backup] Dropbox authenticated as: ${result.account_name}`);
+    console.log(`[Backup] Account ID: ${result.account_id}`);
+    console.log(`[Backup] Email: ${result.email}`);
     return true;
   } catch (error) {
     console.error('[Backup] Failed to initialize Dropbox:', error.message);
+    console.error('[Backup] Full error details:', JSON.stringify(error, null, 2));
+    if (error.status) {
+      console.error(`[Backup] HTTP Status: ${error.status}`);
+    }
     return false;
   }
 }
