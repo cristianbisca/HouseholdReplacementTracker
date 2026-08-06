@@ -11,6 +11,7 @@ const cron = require('node-cron');
 const db = require('./database');
 const telegram = require('./telegram');
 const auth = require('./auth');
+const backup = require('./backup');
 
 const app = express();
 
@@ -479,6 +480,41 @@ app.post('/api/telegram/notify', auth.requireAuth, (req, res) => {
     });
 });
 
+// --- Backup API Routes ---
+
+// Get backup status
+app.get('/api/backup/status', auth.requireAuth, (req, res) => {
+  try {
+    const status = backup.getStatus();
+    res.json({ success: true, data: status });
+  } catch (error) {
+    console.error('Error getting backup status:', error);
+    res.status(500).json({ success: false, error: 'Failed to get backup status' });
+  }
+});
+
+// Trigger manual backup
+app.post('/api/backup/run', auth.requireAuth, (req, res) => {
+  backup.performBackup()
+    .then((result) => {
+      res.json({ success: true, data: result });
+    })
+    .catch((error) => {
+      res.status(500).json({ success: false, error: error.message });
+    });
+});
+
+// List all backups
+app.get('/api/backup/list', auth.requireAuth, (req, res) => {
+  backup.listBackups()
+    .then((result) => {
+      res.json({ success: true, data: result });
+    })
+    .catch((error) => {
+      res.status(500).json({ success: false, error: error.message });
+    });
+});
+
 // Serve index.html for all non-API routes (SPA fallback)
 app.get('*', (req, res) => {
   if (!req.path.startsWith('/api')) {
@@ -505,6 +541,9 @@ async function startServer() {
 
     // Initialize Telegram bot
     telegram.initTelegram();
+
+    // Initialize Dropbox backup
+    await backup.initDropbox();
 
     // Start server (HTTP or HTTPS)
     const protocol = tlsActive ? 'https' : 'http';
@@ -547,6 +586,16 @@ async function startServer() {
       telegram.sendDailyNotification();
     }, { timezone: tz });
     console.log(`[Cron] Daily notification scheduler started (runs at 8:00 AM ${tz})`);
+
+    // Daily backup at configured time (default 2:00 AM)
+    const backupSchedule = process.env.BACKUP_SCHEDULE || '0 2 * * *';
+    cron.schedule(backupSchedule, () => {
+      console.log(`[Cron] Running scheduled backup (${tz})...`);
+      backup.performBackup().catch(err => {
+        console.error('[Cron] Backup failed:', err.message);
+      });
+    }, { timezone: tz });
+    console.log(`[Cron] Backup scheduler started (runs at ${backupSchedule} ${tz})`);
 
   } catch (error) {
     console.error('Failed to start server:', error);

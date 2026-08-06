@@ -445,5 +445,6 @@ module.exports = {
   recordReplacement,
   incrementUsage,
   calculateNextDueDate,
-  saveDatabase
+  saveDatabase,
+  getDatabase
 };
