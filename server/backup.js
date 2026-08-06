@@ -1,10 +1,12 @@
 const fs = require('fs');
 const path = require('path');
 const { Dropbox, DropboxTeam } = require('dropbox');
+const initSqlJs = require('sql.js');
 const db = require('./database');
 
 // --- Configuration ---
 const BACKUP_ENABLED = process.env.BACKUP_ENABLED === 'true';
+const RESTORE_LATEST_BACKUP = process.env.RESTORE_LATEST_BACKUP === 'true';
 const DROPBOX_REFRESH_TOKEN = process.env.BACKUP_DROPBOX_REFRESH_TOKEN || '';
 const DROPBOX_FOLDER = process.env.BACKUP_DROPBOX_FOLDER || '/Backup';
 const RETENTION_DAYS = parseInt(process.env.BACKUP_RETENTION_DAYS, 10) || 30;
@@ -32,7 +34,8 @@ async function initDropbox() {
   console.log(`[Backup] BACKUP_SCHEDULE: ${BACKUP_SCHEDULE}`);
   console.log('[Backup] ==============================');
 
-  if (!BACKUP_ENABLED) {
+  // Allow initialization when backup is enabled OR restore is requested
+  if (!BACKUP_ENABLED && !RESTORE_LATEST_BACKUP) {
     console.log('[Backup] Backup is DISABLED. Set BACKUP_ENABLED=true to enable.');
     return false;
   }
@@ -360,10 +363,251 @@ function formatBytes(bytes) {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
 }
 
+/**
+ * Find the newest backup file in the Dropbox folder.
+ * Returns the Dropbox file info or null if no backups found.
+ */
+async function findNewestDropboxBackup() {
+  if (!_dbx) {
+    throw new Error('Dropbox client not initialized');
+  }
+
+  try {
+    console.log(`[Restore] Listing backups in ${DROPBOX_FOLDER}...`);
+    const listResult = await _dbx.filesListFolder({ path: DROPBOX_FOLDER });
+
+    let newestBackup = null;
+    let newestDate = new Date(0);
+
+    for (const file of listResult.entries) {
+      if (file ['.tag'] !== 'file') continue;
+      if (!file.name.startsWith('hrt_backup_') || !file.name.endsWith('.sqlite')) continue;
+
+      const modifiedDate = file.client_modified ? new Date(file.client_modified) : 
+                           file.server_modified ? new Date(file.server_modified) : new Date(0);
+      
+      if (modifiedDate > newestDate) {
+        newestDate = modifiedDate;
+        newestBackup = {
+          name: file.name,
+          path: file.path_display,
+          size: file.size,
+          modified: modifiedDate.toISOString()
+        };
+      }
+    }
+
+    // Handle pagination
+    while (listResult.has_more) {
+      const cursorResult = await _dbx.filesListFolderContinue({ 
+        cursor: listResult.cursor 
+      });
+
+      for (const file of cursorResult.entries) {
+        if (file ['.tag'] !== 'file') continue;
+        if (!file.name.startsWith('hrt_backup_') || !file.name.endsWith('.sqlite')) continue;
+
+        const modifiedDate = file.client_modified ? new Date(file.client_modified) : 
+                             file.server_modified ? new Date(file.server_modified) : new Date(0);
+        
+        if (modifiedDate > newestDate) {
+          newestDate = modifiedDate;
+          newestBackup = {
+            name: file.name,
+            path: file.path_display,
+            size: file.size,
+            modified: modifiedDate.toISOString()
+          };
+        }
+      }
+
+      listResult = cursorResult;
+    }
+
+    if (!newestBackup) {
+      console.log('[Restore] No backup files found in Dropbox folder.');
+      return null;
+    }
+
+    console.log(`[Restore] Found newest backup: ${newestBackup.name} (${formatBytes(newestBackup.size)}, modified: ${newestBackup.modified})`);
+    return newestBackup;
+  } catch (error) {
+    console.error('[Restore] Failed to list Dropbox backups:', error.message);
+    throw error;
+  }
+}
+
+/**
+ * Download a backup file from Dropbox to a temporary local path.
+ * Returns the local file path.
+ */
+async function downloadBackupFromDropbox(dropboxPath, localPath) {
+  if (!_dbx) {
+    throw new Error('Dropbox client not initialized');
+  }
+
+  try {
+    console.log(`[Restore] Downloading ${dropboxPath} from Dropbox...`);
+    const result = await _dbx.filesDownload({ path: dropboxPath });
+    
+    // result.file_result is a Readable stream, we need to collect all chunks
+    const fileStream = result.file_result;
+    const chunks = [];
+    
+    for await (const chunk of fileStream) {
+      chunks.push(chunk);
+    }
+    
+    const buffer = Buffer.concat(chunks);
+    
+    // Ensure the directory exists
+    const dir = path.dirname(localPath);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    
+    fs.writeFileSync(localPath, buffer);
+    console.log(`[Restore] Downloaded backup to ${localPath} (${formatBytes(buffer.length)})`);
+    return localPath;
+  } catch (error) {
+    console.error('[Restore] Failed to download backup from Dropbox:', error.message);
+    throw error;
+  }
+}
+
+/**
+ * Validate that a SQLite file is valid and has rows in the items table.
+ * Returns { valid: true, itemCount: number } or { valid: false, reason: string }.
+ */
+async function validateBackupSqlite(filePath) {
+  if (!fs.existsSync(filePath)) {
+    return { valid: false, reason: 'Backup file does not exist' };
+  }
+
+  const fileSize = fs.statSync(filePath).size;
+  if (fileSize === 0) {
+    return { valid: false, reason: 'Backup file is empty' };
+  }
+
+  try {
+    const SQL = await initSqlJs();
+    const fileBuffer = fs.readFileSync(filePath);
+    const backupDb = new SQL.Database(fileBuffer);
+
+    // Check that the items table exists by querying sqlite_master
+    const tableCheck = backupDb.exec("SELECT name FROM sqlite_master WHERE type='table' AND name='items'");
+    if (!tableCheck.length || !tableCheck[0].values || tableCheck[0].values.length === 0) {
+      backupDb.close();
+      return { valid: false, reason: 'Backup does not contain an items table' };
+    }
+
+    // Count rows in the items table
+    const countResult = backupDb.exec('SELECT COUNT(*) as count FROM items');
+    if (!countResult.length || !countResult[0].values || countResult[0].values.length === 0) {
+      backupDb.close();
+      return { valid: false, reason: 'Items table has no rows' };
+    }
+
+    const itemCount = countResult[0].values[0][0];
+    backupDb.close();
+
+    if (itemCount === 0) {
+      return { valid: false, reason: `Items table exists but has ${itemCount} rows` };
+    }
+
+    console.log(`[Restore] Backup validation passed: ${itemCount} items found in items table`);
+    return { valid: true, itemCount };
+  } catch (error) {
+    return { valid: false, reason: `Failed to parse SQLite file: ${error.message}` };
+  }
+}
+
+/**
+ * Restore the database from a backup file.
+ * This replaces the current database file with the backup.
+ */
+async function restoreLatestBackup() {
+  if (!RESTORE_LATEST_BACKUP) {
+    console.log('[Restore] RESTORE_LATEST_BACKUP is not enabled. Skipping restore.');
+    return null;
+  }
+
+  console.log('========================================');
+  console.log('[Restore] RESTORE_LATEST_BACKUP is ENABLED');
+  console.log('[Restore] Starting restore process...');
+  console.log('========================================');
+
+  // Step 1: Initialize Dropbox first
+  const initialized = await initDropbox();
+  if (!initialized) {
+    console.error('[Restore] Cannot restore: Dropbox client failed to initialize.');
+    throw new Error('Dropbox client not available for restore');
+  }
+
+  // Step 2: Find the newest backup
+  const newestBackup = await findNewestDropboxBackup();
+  if (!newestBackup) {
+    console.error('[Restore] Cannot restore: No backups found in Dropbox.');
+    throw new Error('No backups available to restore');
+  }
+
+  // Step 3: Download the backup to a temporary location
+  const tempBackupPath = path.join(__dirname, '..', 'data', 'backups', '_restore_temp.sqlite');
+  await downloadBackupFromDropbox(newestBackup.path, tempBackupPath);
+
+  try {
+    // Step 4: Validate the downloaded backup
+    console.log('[Restore] Validating backup file...');
+    const validation = await validateBackupSqlite(tempBackupPath);
+    
+    if (!validation.valid) {
+      console.error(`[Restore] Backup validation FAILED: ${validation.reason}`);
+      // Clean up temp file
+      fs.unlinkSync(tempBackupPath);
+      throw new Error(`Backup validation failed: ${validation.reason}`);
+    }
+
+    // Step 5: Create a safety backup of the current database before overwriting
+    const DB_PATH = path.join(__dirname, '..', 'data', 'hrt.db');
+    if (fs.existsSync(DB_PATH)) {
+      const safetyBackupName = `hrt_pre_restore_${new Date().toISOString().replace(/[:.]/g, '-').split('T')[0]}_${new Date().toISOString().split('T')[1].replace(/:/g, '').split('.')[0]}.sqlite`;
+      const safetyBackupPath = path.join(__dirname, '..', 'data', 'backups', safetyBackupName);
+      fs.copyFileSync(DB_PATH, safetyBackupPath);
+      console.log(`[Restore] Created safety backup of current database: ${safetyBackupName}`);
+    }
+
+    // Step 6: Replace the current database with the validated backup
+    console.log('[Restore] Restoring database from backup...');
+    fs.copyFileSync(tempBackupPath, DB_PATH);
+    console.log(`[Restore] Database restored successfully! (${validation.itemCount} items)`);
+
+    // Clean up temp file
+    fs.unlinkSync(tempBackupPath);
+
+    return {
+      source: newestBackup.name,
+      sourcePath: newestBackup.path,
+      itemCount: validation.itemCount,
+      size: newestBackup.size,
+      modified: newestBackup.modified
+    };
+  } catch (error) {
+    // Clean up temp file on error
+    if (fs.existsSync(tempBackupPath)) {
+      fs.unlinkSync(tempBackupPath);
+    }
+    throw error;
+  }
+}
+
 module.exports = {
   initDropbox,
   performBackup,
   listBackups,
   getStatus,
   createLocalBackup,
+  restoreLatestBackup,
+  findNewestDropboxBackup,
+  downloadBackupFromDropbox,
+  validateBackupSqlite,
 };

@@ -535,9 +535,63 @@ async function startServer() {
     // Initialize auth
     auth.initAuth();
 
-    // Initialize database
-    await db.initDatabase();
-    console.log('Database initialized successfully');
+    // Restore from latest backup if enabled (MUST happen before database init)
+    const RESTORE_LATEST_BACKUP = process.env.RESTORE_LATEST_BACKUP === 'true';
+    let restoreResult = null;
+    let safetyBackupPath = null;
+
+    if (RESTORE_LATEST_BACKUP) {
+      try {
+        restoreResult = await backup.restoreLatestBackup();
+        // Track the safety backup path for potential rollback
+        if (restoreResult) {
+          const DB_PATH = path.join(__dirname, '..', 'data', 'hrt.db');
+          const backupDir = path.join(__dirname, '..', 'data', 'backups');
+          // Find the most recent pre-restore safety backup
+          if (fs.existsSync(backupDir)) {
+            const safetyFiles = fs.readdirSync(backupDir)
+              .filter(f => f.startsWith('hrt_pre_restore_') && f.endsWith('.sqlite'))
+              .sort()
+              .reverse();
+            if (safetyFiles.length > 0) {
+              safetyBackupPath = path.join(backupDir, safetyFiles[0]);
+            }
+          }
+        }
+      } catch (error) {
+        console.error('[Startup] FATAL: Database restore failed:', error.message);
+        process.exit(1);
+      }
+    }
+
+    // Initialize database (after potential restore so it loads restored data)
+    try {
+      await db.initDatabase();
+      console.log('Database initialized successfully');
+    } catch (error) {
+      // If we just did a restore and have a safety backup, roll back and retry
+      if (RESTORE_LATEST_BACKUP && safetyBackupPath && fs.existsSync(safetyBackupPath)) {
+        console.error(`[Startup] Database initialization failed after restore: ${error.message}`);
+        console.log('[Startup] Rolling back to safety backup...');
+
+        try {
+          const DB_PATH = path.join(__dirname, '..', 'data', 'hrt.db');
+          fs.copyFileSync(safetyBackupPath, DB_PATH);
+          console.log('[Startup] Safety backup restored successfully.');
+
+          // Retry database initialization with the rolled-back database
+          await db.initDatabase();
+          console.log('[Startup] Database initialized successfully after rollback.');
+        } catch (rollbackError) {
+          console.error(`[Startup] FATAL: Rollback failed: ${rollbackError.message}`);
+          process.exit(1);
+        }
+      } else {
+        // No restore was done or no safety backup available - fatal error
+        console.error('[Startup] FATAL: Database initialization failed:', error.message);
+        process.exit(1);
+      }
+    }
 
     // Initialize Telegram bot
     telegram.initTelegram();

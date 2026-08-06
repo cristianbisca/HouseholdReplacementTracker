@@ -615,6 +615,55 @@ The application uses SQLite with three main tables:
 | `TLS_CERT` | `/app/certs/cert.pem` | Path to TLS certificate file |
 | `TLS_KEY` | `/app/certs/key.pem` | Path to TLS private key file |
 | `TLS_CN` | Auto-detected LAN IP | Common Name for self-signed certificate CN and SAN |
+| `BACKUP_ENABLED` | `false` | Set to `true` to enable automatic daily backups to Dropbox |
+| `BACKUP_DROPBOX_REFRESH_TOKEN` | (empty) | Dropbox access token for backup uploads |
+| `BACKUP_DROPBOX_FOLDER` | `/Backup` | Dropbox folder path where backups are stored |
+| `BACKUP_RETENTION_DAYS` | `30` | Number of days to keep backup files before cleanup |
+| `BACKUP_SCHEDULE` | `0 2 * * *` | Cron expression for daily backup time (default: 2 AM) |
+| `RESTORE_LATEST_BACKUP` | `false` | Set to `true` to restore the newest backup from Dropbox at server startup |
+
+### Database Restore from Backup
+
+When `RESTORE_LATEST_BACKUP=true`, the server will attempt to restore the database from the most recent backup in the configured Dropbox folder **before** initializing the database. The restore process:
+
+1. **Initializes Dropbox** using `BACKUP_DROPBOX_REFRESH_TOKEN`
+2. **Finds the newest backup** by scanning `BACKUP_DROPBOX_FOLDER` for `hrt_backup_*.sqlite` files, sorted by modification date
+3. **Downloads the backup** to a temporary local file
+4. **Validates the SQLite file**: verifies it is a valid SQLite database, contains an `items` table, and has at least 1 row in that table
+5. **Creates a safety backup** of the current `data/hrt.db` (if it exists) before overwriting — saved as `hrt_pre_restore_*.sqlite` in `data/backups/`
+6. **Replaces the database** with the validated backup
+7. **Initializes the database** normally, loading the restored data
+
+#### Automatic Rollback
+
+If database initialization fails after a successful restore (e.g., the restored file has an incompatible schema), the server will automatically:
+
+1. Detect the failure during `db.initDatabase()`
+2. Copy the safety backup (`hrt_pre_restore_*.sqlite`) back to `data/hrt.db`
+3. Retry database initialization with the original data
+4. Continue normal startup if the rollback succeeds
+
+If the rollback also fails, or if no safety backup exists (e.g., there was no prior database), the server will exit with a fatal error. This ensures the application never runs with corrupted or empty data.
+
+#### Pre-Restore Failures
+
+If any step before the database replacement fails (Dropbox unavailable, no backups found, validation fails), the server will exit immediately with a fatal error and **will not start**.
+
+#### Example: Restore on Docker Restart
+
+```bash
+docker run -d \
+  --name hrt \
+  -p 3000:3000 \
+  -v ./data:/app/data \
+  -e RESTORE_LATEST_BACKUP=true \
+  -e BACKUP_DROPBOX_REFRESH_TOKEN=your_token_here \
+  -e BACKUP_DROPBOX_FOLDER=/Backup \
+  --restart unless-stopped \
+  household-replacement-tracker:latest
+```
+
+After a successful restore, you can set `RESTORE_LATEST_BACKUP=false` (or remove it) on subsequent starts to avoid re-restoring.
 
 ### HTTP-Only Mode (Reverse Proxy)
 
