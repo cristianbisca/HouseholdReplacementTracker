@@ -35,6 +35,6 @@ ENV NODE_ENV=production
 ENV PORT=3000
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD node -e "const http=require('http'); const https=require('https'); const fs=require('fs'); const useHttps=fs.existsSync('/app/certs/cert.pem') && fs.existsSync('/app/certs/key.pem'); const client=useHttps?https:http; client.get({hostname:'localhost',port:3000,path:'/api/health',rejectUnauthorized:false}, (r) => { process.exit(r.statusCode === 200 ? 0 : 1) }).on('error', () => process.exit(1))"
+  CMD node -e "const http=require('http'); const https=require('https'); const fs=require('fs'); const tlsMode=(process.env.TLS_MODE||'auto').toLowerCase(); const certsExist=fs.existsSync('/app/certs/cert.pem') && fs.existsSync('/app/certs/key.pem'); const useHttps=tlsMode!=='off' && certsExist; const client=useHttps?https:http; client.get({hostname:'localhost',port:3000,path:'/api/health',rejectUnauthorized:false}, (r) => { process.exit(r.statusCode === 200 ? 0 : 1) }).on('error', () => process.exit(1))"
 
 CMD ["node", "server/index.js"]
