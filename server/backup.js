@@ -8,28 +8,93 @@ const db = require('./database');
 const BACKUP_ENABLED = process.env.BACKUP_ENABLED === 'true';
 const RESTORE_LATEST_BACKUP = process.env.RESTORE_LATEST_BACKUP === 'true';
 const DROPBOX_REFRESH_TOKEN = process.env.BACKUP_DROPBOX_REFRESH_TOKEN || '';
+const DROPBOX_APP_KEY = process.env.BACKUP_DROPBOX_APP_KEY || '';
+const DROPBOX_APP_SECRET = process.env.BACKUP_DROPBOX_APP_SECRET || '';
 const DROPBOX_FOLDER = process.env.BACKUP_DROPBOX_FOLDER || '/Backup';
 const RETENTION_DAYS = parseInt(process.env.BACKUP_RETENTION_DAYS, 10) || 30;
 const BACKUP_SCHEDULE = process.env.BACKUP_SCHEDULE || '0 2 * * *';
 
-// In-memory Dropbox client (initialized lazily on first backup/restore)
+// In-memory access token (set after refresh)
+let _accessToken = null;
 let _dbx = null;
 
 /**
- * Initialize Dropbox client using the static refresh token as accessToken.
- * The refresh token is permanent and does not expire, so it can be used directly.
+ * Exchange the long-lived refresh token for a fresh short-lived access token.
+ * This must be called before each backup/restore operation since the refresh
+ * token is not meant to be used statically as an access token.
+ */
+async function refreshAccessToken() {
+  const https = require('https');
+
+  return new Promise((resolve, reject) => {
+    // Build Basic auth header: base64(app_key:app_secret)
+    const authString = `${DROPBOX_APP_KEY}:${DROPBOX_APP_SECRET}`;
+    const base64Auth = Buffer.from(authString).toString('base64');
+
+    const postData = new URLSearchParams({
+      grant_type: 'refresh_token',
+      refresh_token: DROPBOX_REFRESH_TOKEN,
+    }).toString();
+
+    const options = {
+      hostname: 'api.dropboxapi.com',
+      path: '/oauth2/token',
+      method: 'POST',
+      headers: {
+        'Authorization': `Basic ${base64Auth}`,
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Content-Length': Buffer.byteLength(postData),
+      },
+    };
+
+    const req = https.request(options, (res) => {
+      let data = '';
+      res.on('data', (chunk) => { data += chunk; });
+      res.on('end', () => {
+        if (res.statusCode !== 200) {
+          reject(new Error(`Dropbox token refresh failed with HTTP ${res.statusCode}: ${data}`));
+          return;
+        }
+        try {
+          const json = JSON.parse(data);
+          if (!json.access_token) {
+            reject(new Error('Dropbox token refresh response missing access_token'));
+            return;
+          }
+          console.log(`[Backup] Access token refreshed successfully (expires in ${json.expires_in}s)`);
+          resolve(json.access_token);
+        } catch (e) {
+          reject(new Error(`Failed to parse token refresh response: ${e.message}`));
+        }
+      });
+    });
+
+    req.on('error', (error) => {
+      reject(new Error(`Dropbox token refresh request failed: ${error.message}`));
+    });
+
+    req.write(postData);
+    req.end();
+  });
+}
+
+/**
+ * Initialize Dropbox client by exchanging the refresh token for a fresh access token.
  */
 async function initDropbox() {
-  // Already initialized
-  if (_dbx) return true;
-
-  const tokenPreview = DROPBOX_REFRESH_TOKEN ? 
+  // Log all config values for debugging (mask tokens for security)
+  const refreshTokenPreview = DROPBOX_REFRESH_TOKEN ? 
     `${DROPBOX_REFRESH_TOKEN.substring(0, 8)}...${DROPBOX_REFRESH_TOKEN.substring(DROPBOX_REFRESH_TOKEN.length - 8)}` : 
+    '(empty)';
+  const appKeyPreview = DROPBOX_APP_KEY ? 
+    `${DROPBOX_APP_KEY.substring(0, 8)}...` : 
     '(empty)';
   
   console.log('[Backup] === BACKUP CONFIGURATION ===');
   console.log(`[Backup] BACKUP_ENABLED: ${BACKUP_ENABLED} (raw env: "${process.env.BACKUP_ENABLED}")`);
-  console.log(`[Backup] BACKUP_DROPBOX_REFRESH_TOKEN: ${tokenPreview} (length: ${DROPBOX_REFRESH_TOKEN?.length || 0})`);
+  console.log(`[Backup] BACKUP_DROPBOX_REFRESH_TOKEN: ${refreshTokenPreview} (length: ${DROPBOX_REFRESH_TOKEN?.length || 0})`);
+  console.log(`[Backup] BACKUP_DROPBOX_APP_KEY: ${appKeyPreview}`);
+  console.log(`[Backup] BACKUP_DROPBOX_APP_SECRET: ${DROPBOX_APP_SECRET ? '(set)' : '(empty)'}`);
   console.log(`[Backup] BACKUP_DROPBOX_FOLDER: ${DROPBOX_FOLDER}`);
   console.log(`[Backup] BACKUP_RETENTION_DAYS: ${RETENTION_DAYS}`);
   console.log(`[Backup] BACKUP_SCHEDULE: ${BACKUP_SCHEDULE}`);
@@ -46,9 +111,19 @@ async function initDropbox() {
     return false;
   }
 
+  if (!DROPBOX_APP_KEY || !DROPBOX_APP_SECRET) {
+    console.log('[Backup] Missing Dropbox App Key or Secret. Set BACKUP_DROPBOX_APP_KEY and BACKUP_DROPBOX_APP_SECRET environment variables.');
+    return false;
+  }
+
   try {
+    // Step 1: Exchange refresh token for a fresh access token
+    console.log('[Backup] Exchanging refresh token for access token...');
+    _accessToken = await refreshAccessToken();
+
+    // Step 2: Create Dropbox client with the fresh access token
     _dbx = new Dropbox({
-      accessToken: DROPBOX_REFRESH_TOKEN,
+      accessToken: _accessToken,
     });
 
     console.log('[Backup] Dropbox client created, verifying token...');
@@ -198,6 +273,7 @@ async function cleanupOldBackups() {
 
 /**
  * Perform a full backup: create local, upload to Dropbox, cleanup old.
+ * Each call refreshes the Dropbox access token so it is always fresh.
  */
 async function performBackup() {
   if (!BACKUP_ENABLED) {
@@ -208,7 +284,7 @@ async function performBackup() {
   try {
     console.log('[Backup] Starting daily backup...');
 
-    // Initialize Dropbox client (lazy init on first call)
+    // Step 0: Refresh Dropbox token and initialize client (lazy init)
     const initialized = await initDropbox();
     if (!initialized) {
       console.log('[Backup] Dropbox not configured - performing local-only backup.');
@@ -629,6 +705,7 @@ async function restoreLatestBackup() {
 
 module.exports = {
   initDropbox,
+  refreshAccessToken,
   performBackup,
   listBackups,
   getStatus,
