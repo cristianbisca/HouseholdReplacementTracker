@@ -214,19 +214,23 @@ async function cleanupOldBackups() {
 
   try {
     // List files in the backup folder
-    const listResult = await _dbx.filesListFolder({ path: DROPBOX_FOLDER });
-    
+    const rawResult = await _dbx.filesListFolder({ path: DROPBOX_FOLDER });
+
+    // The dropbox npm package wraps the response in a .result property
+    let listResult = rawResult.result || rawResult;
+    const entries = Array.isArray(listResult.entries) ? listResult.entries : [];
+
     const cutoffDate = new Date();
     cutoffDate.setDate(cutoffDate.getDate() - RETENTION_DAYS);
-    
+
     let deletedCount = 0;
-    for (const file of listResult.entries) {
+    for (const file of entries) {
       if (file ['.tag'] !== 'file') continue;
-      
+
       // Parse backup filename to extract date: hrt_backup_YYYY-MM-DD_HHMMSS.sqlite
       const match = file.name.match(/hrt_backup_(\d{4}-\d{2}-\d{2})_/);
       if (!match) continue;
-      
+
       const fileDate = new Date(match[1] + 'T00:00:00');
       if (fileDate < cutoffDate) {
         await _dbx.filesDeleteV2({ path: `${DROPBOX_FOLDER}/${file.name}` });
@@ -234,23 +238,26 @@ async function cleanupOldBackups() {
         deletedCount++;
       }
     }
-    
+
     if (deletedCount > 0) {
       console.log(`[Backup] Cleaned up ${deletedCount} old backup(s)`);
     }
-    
+
     // Handle pagination if there are more files
     while (listResult.has_more) {
-      const cursorResult = await _dbx.filesListFolderContinue({ 
-        cursor: listResult.cursor 
+      const rawCursor = await _dbx.filesListFolderContinue({
+        cursor: listResult.cursor
       });
-      
-      for (const file of cursorResult.entries) {
+
+      listResult = rawCursor.result || rawCursor;
+      const pageEntries = Array.isArray(listResult.entries) ? listResult.entries : [];
+
+      for (const file of pageEntries) {
         if (file ['.tag'] !== 'file') continue;
-        
+
         const match = file.name.match(/hrt_backup_(\d{4}-\d{2}-\d{2})_/);
         if (!match) continue;
-        
+
         const fileDate = new Date(match[1] + 'T00:00:00');
         if (fileDate < cutoffDate) {
           await _dbx.filesDeleteV2({ path: `${DROPBOX_FOLDER}/${file.name}` });
@@ -258,8 +265,6 @@ async function cleanupOldBackups() {
           deletedCount++;
         }
       }
-      
-      listResult = cursorResult;
     }
   } catch (error) {
     console.error('[Backup] Failed to cleanup old backups:', error.message);
