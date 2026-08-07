@@ -625,8 +625,9 @@ async function startServer() {
     // Initialize Telegram bot
     telegram.initTelegram();
 
-    // Initialize Dropbox backup
-    await backup.initDropbox();
+    // Dropbox backup is NOT initialized at startup anymore.
+    // Token refresh happens lazily inside performBackup() and restoreLatestBackup()
+    // so the access token is always fresh when actually needed.
 
     // Start server (HTTP or HTTPS)
     const protocol = tlsActive ? 'https' : 'http';
@@ -671,12 +672,15 @@ async function startServer() {
     console.log(`[Cron] Daily notification scheduler started (runs at 8:00 AM ${tz})`);
 
     // Daily backup at configured time (default 2:00 AM)
+    // performBackup() now handles its own token refresh internally.
     const backupSchedule = process.env.BACKUP_SCHEDULE || '0 2 * * *';
-    cron.schedule(backupSchedule, () => {
+    cron.schedule(backupSchedule, async () => {
       console.log(`[Cron] Running scheduled backup (${tz})...`);
-      backup.performBackup().catch(err => {
+      try {
+        await backup.performBackup();
+      } catch (err) {
         console.error('[Cron] Backup failed:', err.message);
-      });
+      }
     }, { timezone: tz });
     console.log(`[Cron] Backup scheduler started (runs at ${backupSchedule} ${tz})`);
 
